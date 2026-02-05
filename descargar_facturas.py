@@ -140,9 +140,9 @@ def ir_a_comprobantes(driver, tipo):
     guardar_html(driver, f"menu_{tipo.lower()}")
 
 
-def filtrar_fechas(driver, desde, hasta):
+def filtrar_fechas(driver, desde, hasta, ruc=None):
     """
-    Filtra las facturas por rango de fechas usando los selects de Periodos de emisión
+    Filtra las facturas por rango de fechas usando los campos del formulario
     Formato esperado de fechas: DD/MM/AAAA
     """
     wait = WebDriverWait(driver, 20)
@@ -150,78 +150,128 @@ def filtrar_fechas(driver, desde, hasta):
     try:
         time.sleep(3)
         
-        # Parsear fechas DD/MM/AAAA -> año, mes
-        desde_partes = desde.split('/')
-        hasta_partes = hasta.split('/')
-        
-        desde_anio = desde_partes[2]
-        desde_mes = desde_partes[1]
-        hasta_anio = hasta_partes[2]
-        hasta_mes = hasta_partes[1]
-        
         print(f"Filtrando desde: {desde} hasta: {hasta}")
         
-        # Script para seleccionar los valores en los selects
-        script_fechas = f"""
-        function setSelectValue(selectText, value) {{
-            const selects = document.querySelectorAll('select');
-            for (let select of selects) {{
-                // Buscar por label cercano o texto del select
-                const parent = select.closest('div, td, label');
-                const parentText = parent ? (parent.innerText || parent.textContent || '') : '';
-                const selectLabel = select.getAttribute('aria-label') || '';
-                
-                if (parentText.toLowerCase().includes(selectText.toLowerCase()) || 
-                    selectLabel.toLowerCase().includes(selectText.toLowerCase())) {{
-                    for (let option of select.options) {{
-                        if (option.value === value || option.text === value) {{
-                            select.value = option.value;
-                            select.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                            return true;
-                        }}
-                    }}
-                }}
-            }}
-            return false;
-        }}
+        # Parsear fechas DD/MM/AAAA -> año, mes
+        desde_partes = desde.split('/')
+        desde_anio = desde_partes[2]
+        desde_mes = desde_partes[1]
         
-        // Intentar encontrar y seleccionar los selects
+        # Función para obtener texto del mes
+        def obtener_nombre_mes(numero_mes):
+            meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+            return meses[int(numero_mes) - 1] if numero_mes.isdigit() else meses[0]
+        
+        mes_nombre = obtener_nombre_mes(desde_mes)
+        print(f"Configurando fecha: {desde_anio} - {mes_nombre} - Todos")
+        
+        # Script simplificado para seleccionar por posición
+        script_formulario = f"""
         const resultado = {{}};
         
-        // Buscar todos los selects primero para identificarlos
-        const allSelects = document.querySelectorAll('select');
-        console.log('Selects encontrados:', allSelects.length);
+        // 1. Llenar campo RUC si se proporcionó
+        if ('{ruc if ruc else ""}') {{
+            const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+            for (let input of inputs) {{
+                const placeholder = input.getAttribute('placeholder') || '';
+                if (placeholder.toLowerCase().includes('ruc') || 
+                    placeholder.toLowerCase().includes('cédula') ||
+                    placeholder.toLowerCase().includes('pasaporte')) {{
+                    input.value = '{ruc}';
+                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    resultado.ruc = true;
+                    break;
+                }}
+            }}
+        }}
         
-        // Estrategia 1: Seleccionar por posición (asumiendo: año, mes, día/todos)
-        if (allSelects.length >= 3) {{
-            // Select 0: Año desde
-            for (let option of allSelects[0].options) {{
+        // 2. Seleccionar los 3 selects de período por posición
+        const allSelects = document.querySelectorAll('select');
+        console.log('Total de selects encontrados:', allSelects.length);
+        
+        // Buscar selects relacionados con período de emisión
+        let periodoSelects = [];
+        for (let i = 0; i < allSelects.length; i++) {{
+            const parent = allSelects[i].closest('div, td, label, tr');
+            const parentText = parent ? (parent.innerText || parent.textContent || '') : '';
+            if (parentText.toLowerCase().includes('periodo') || 
+                parentText.toLowerCase().includes('emisión')) {{
+                periodoSelects.push(allSelects[i]);
+            }}
+        }}
+        
+        console.log('Selects de período encontrados:', periodoSelects.length);
+        
+        // Si no encontramos por texto, usamos los primeros 3 selects
+        if (periodoSelects.length === 0) {{
+            periodoSelects = Array.from(allSelects).slice(0, 3);
+        }}
+        
+        // Select 1: Año
+        if (periodoSelects[0]) {{
+            for (let option of periodoSelects[0].options) {{
                 if (option.value === '{desde_anio}' || option.text === '{desde_anio}') {{
-                    allSelects[0].value = option.value;
-                    allSelects[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    resultado.anioDesde = true;
+                    periodoSelects[0].value = option.value;
+                    periodoSelects[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    resultado.anio = true;
+                    console.log('Año seleccionado:', option.text);
                     break;
                 }}
             }}
-            
-            // Select 1: Mes desde
-            for (let option of allSelects[1].options) {{
-                if (option.value === '{desde_mes}' || option.text === '{desde_mes}' || 
-                    option.value === '{int(desde_mes)}' || option.text.includes('{desde_mes}')) {{
-                    allSelects[1].value = option.value;
-                    allSelects[1].dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    resultado.mesDesde = true;
+        }}
+        
+        // Select 2: Mes
+        if (periodoSelects[1]) {{
+            for (let option of periodoSelects[1].options) {{
+                if (option.text === '{mes_nombre}' || 
+                    option.text === '{desde_mes}' || 
+                    option.text.includes('{mes_nombre}') ||
+                    option.value === '{int(desde_mes)}' ||
+                    option.text === '{int(desde_mes)}') {{
+                    periodoSelects[1].value = option.value;
+                    periodoSelects[1].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    resultado.mes = true;
+                    console.log('Mes seleccionado:', option.text);
                     break;
                 }}
             }}
-            
-            // Select 2: Día/Todos - seleccionar "Todos"
-            for (let option of allSelects[2].options) {{
-                if (option.text.toUpperCase().includes('TODOS') || option.value === '0' || option.value === '') {{
-                    allSelects[2].value = option.value;
-                    allSelects[2].dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    resultado.diaDesde = true;
+        }}
+        
+        // Select 3: Todos
+        if (periodoSelects[2]) {{
+            for (let option of periodoSelects[2].options) {{
+                const optionText = option.text || option.value || '';
+                if (optionText.toUpperCase().includes('TODOS') || 
+                    option.value === '0' || 
+                    option.value === '' ||
+                    optionText.trim() === '') {{
+                    periodoSelects[2].value = option.value;
+                    periodoSelects[2].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    resultado.todos = true;
+                    console.log('Opción Todos seleccionada:', option.text);
                     break;
+                }}
+            }}
+        }}
+        
+        // 3. Seleccionar tipo de comprobante (Factura)
+        for (let select of allSelects) {{
+            const parent = select.closest('div, td, label, tr');
+            const parentText = parent ? (parent.innerText || parent.textContent || '') : '';
+            
+            if (parentText.toLowerCase().includes('tipo de comprobante')) {{
+                for (let option of select.options) {{
+                    if (option.text === 'Factura' || 
+                        option.text.includes('Factura') ||
+                        option.value.toUpperCase().includes('FACTURA')) {{
+                        select.value = option.value;
+                        select.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        resultado.tipoComprobante = true;
+                        console.log('Tipo de comprobante seleccionado:', option.text);
+                        break;
+                    }}
                 }}
             }}
         }}
@@ -229,30 +279,42 @@ def filtrar_fechas(driver, desde, hasta):
         return resultado;
         """
         
-        resultado = driver.execute_script(script_fechas)
-        print(f"Selects configurados: {resultado}")
+        resultado = driver.execute_script(script_formulario)
+        print(f"Campos configurados: {resultado}")
         
         time.sleep(2)
         
+        # Esperar un momento para que el reCAPTCHA cargue
+        print("⏳ Esperando a que el reCAPTCHA esté listo...")
+        time.sleep(3)
+        
         # Buscar y hacer clic en el botón de consultar
         script_boton = """
-        const botones = document.querySelectorAll('button, input[type="submit"], a');
+        const botones = document.querySelectorAll('button, input[type="submit"], input[type="button"], a');
         for (let btn of botones) {
             const texto = (btn.textContent || btn.value || '').toLowerCase();
-            if (texto.includes('consultar') || 
+            if (texto.trim() === 'consultar' || 
+                texto.includes('consultar') || 
                 texto.includes('buscar') ||
                 texto.includes('filtrar') ||
-                btn.className.toLowerCase().includes('consultar')) {
-                btn.click();
-                return true;
+                btn.className.toLowerCase().includes('consultar') ||
+                btn.id.toLowerCase().includes('consultar')) {
+                // Verificar que el botón esté visible y habilitado
+                if (btn.offsetParent !== null && !btn.disabled) {
+                    console.log('Botón encontrado:', btn);
+                    btn.click();
+                    return true;
+                }
             }
         }
-        // Buscar por icono o clase específica
-        const btnConsultar = document.querySelector('.ui-button, .btn-consultar, [id*="consultar"], [id*="Consultar"]');
-        if (btnConsultar) {
+        
+        // Buscar por ID o clases específicas
+        const btnConsultar = document.querySelector('[id*="consultar"], [id*="Consultar"], .ui-button, .btn-consultar');
+        if (btnConsultar && btnConsultar.offsetParent !== null && !btnConsultar.disabled) {
             btnConsultar.click();
             return true;
         }
+        
         return false;
         """
         
@@ -262,9 +324,25 @@ def filtrar_fechas(driver, desde, hasta):
             print("✅ Botón de consulta presionado")
         else:
             print("⚠️ No se encontró botón de consulta")
+            print("📝 Puede ser necesario resolver el reCAPTCHA manualmente")
         
-        # Esperar a que carguen los resultados
+        # Esperar a que carguen los resultados o a que se pueda resolver el reCAPTCHA
         time.sleep(5)
+        
+        # Verificar si hay un reCAPTCHA que requiere atención
+        script_recaptcha = """
+        const recaptcha = document.querySelector('.g-recaptcha, [id*="recaptcha"], iframe[title*="reCAPTCHA"]');
+        if (recaptcha) {
+            console.log('reCAPTCHA detectado');
+            return true;
+        }
+        return false;
+        """
+        
+        recaptcha_detectado = driver.execute_script(script_recaptcha)
+        if recaptcha_detectado:
+            print("🔐 reCAPTCHA detectado - Esperando 10 segundos para resolución manual...")
+            time.sleep(10)
         
     except Exception as e:
         print(f"⚠️ Error al filtrar fechas: {e}")
