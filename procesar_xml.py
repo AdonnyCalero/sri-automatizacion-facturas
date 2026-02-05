@@ -1,6 +1,6 @@
 # procesar_xml.py
 
-from lxml import etree
+from lxml import etree as etree
 
 def leer_factura_xml(ruta_xml):
     tree = etree.parse(ruta_xml)

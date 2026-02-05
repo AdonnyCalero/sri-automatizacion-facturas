@@ -5,3 +5,4 @@ config.py
 debug/html/*.html
 facturas_xml/
 chromedriver.exe
+debug/
