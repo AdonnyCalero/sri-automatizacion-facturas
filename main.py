@@ -12,7 +12,7 @@ from login_sri import login
 from descargar_facturas import (
     ir_a_comprobantes,
     filtrar_fechas,
-    descargar_xmls
+    descargar_documentos
 )
 from generar_excel import generar_excel
 from guardar_html import guardar_html
@@ -57,7 +57,8 @@ try:
     time.sleep(5)
     guardar_html(driver, "03_recibidas_filtradas")
 
-    descargar_xmls(driver)
+    print("Descargando documentos recibidos (XML y PDF)...")
+    descargar_documentos(driver, descargar_xml=True, descargar_pdf=True)
 
     # ========= FACTURAS EMITIDAS =========
     driver.execute_cdp_cmd(
@@ -73,7 +74,8 @@ try:
     time.sleep(5)
     guardar_html(driver, "05_emitidas_filtradas")
 
-    descargar_xmls(driver)
+    print("Descargando documentos emitidos (XML y PDF)...")
+    descargar_documentos(driver, descargar_xml=True, descargar_pdf=True)
 
 finally:
     driver.quit()

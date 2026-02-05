@@ -142,70 +142,116 @@ def ir_a_comprobantes(driver, tipo):
 
 def filtrar_fechas(driver, desde, hasta):
     """
-    Filtra las facturas por rango de fechas en el SRI
+    Filtra las facturas por rango de fechas usando los selects de Periodos de emisión
+    Formato esperado de fechas: DD/MM/AAAA
     """
     wait = WebDriverWait(driver, 20)
     
     try:
-        # Esperar a que los campos de fecha estén disponibles
-        # Los IDs pueden variar, se usan selectores flexibles
         time.sleep(3)
         
-        # Buscar campos de fecha usando JavaScript para mayor flexibilidad
+        # Parsear fechas DD/MM/AAAA -> año, mes
+        desde_partes = desde.split('/')
+        hasta_partes = hasta.split('/')
+        
+        desde_anio = desde_partes[2]
+        desde_mes = desde_partes[1]
+        hasta_anio = hasta_partes[2]
+        hasta_mes = hasta_partes[1]
+        
+        print(f"Filtrando desde: {desde} hasta: {hasta}")
+        
+        # Script para seleccionar los valores en los selects
         script_fechas = f"""
-        // Función para encontrar input de fecha por placeholder o label
-        function findDateInput(labelText) {{
-            const labels = document.querySelectorAll('label');
-            for (let label of labels) {{
-                if (label.textContent.toLowerCase().includes(labelText)) {{
-                    const input = label.querySelector('input') || 
-                                 label.parentElement.querySelector('input') ||
-                                 document.getElementById(label.getAttribute('for'));
-                    if (input && input.type === 'text') return input;
+        function setSelectValue(selectText, value) {{
+            const selects = document.querySelectorAll('select');
+            for (let select of selects) {{
+                // Buscar por label cercano o texto del select
+                const parent = select.closest('div, td, label');
+                const parentText = parent ? (parent.innerText || parent.textContent || '') : '';
+                const selectLabel = select.getAttribute('aria-label') || '';
+                
+                if (parentText.toLowerCase().includes(selectText.toLowerCase()) || 
+                    selectLabel.toLowerCase().includes(selectText.toLowerCase())) {{
+                    for (let option of select.options) {{
+                        if (option.value === value || option.text === value) {{
+                            select.value = option.value;
+                            select.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            return true;
+                        }}
+                    }}
                 }}
             }}
-            // Buscar por placeholder
-            const inputs = document.querySelectorAll('input[type="text"]');
-            for (let input of inputs) {{
-                if (input.placeholder && input.placeholder.toLowerCase().includes(labelText)) {{
-                    return input;
+            return false;
+        }}
+        
+        // Intentar encontrar y seleccionar los selects
+        const resultado = {{}};
+        
+        // Buscar todos los selects primero para identificarlos
+        const allSelects = document.querySelectorAll('select');
+        console.log('Selects encontrados:', allSelects.length);
+        
+        // Estrategia 1: Seleccionar por posición (asumiendo: año, mes, día/todos)
+        if (allSelects.length >= 3) {{
+            // Select 0: Año desde
+            for (let option of allSelects[0].options) {{
+                if (option.value === '{desde_anio}' || option.text === '{desde_anio}') {{
+                    allSelects[0].value = option.value;
+                    allSelects[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    resultado.anioDesde = true;
+                    break;
                 }}
             }}
-            return null;
+            
+            // Select 1: Mes desde
+            for (let option of allSelects[1].options) {{
+                if (option.value === '{desde_mes}' || option.text === '{desde_mes}' || 
+                    option.value === '{int(desde_mes)}' || option.text.includes('{desde_mes}')) {{
+                    allSelects[1].value = option.value;
+                    allSelects[1].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    resultado.mesDesde = true;
+                    break;
+                }}
+            }}
+            
+            // Select 2: Día/Todos - seleccionar "Todos"
+            for (let option of allSelects[2].options) {{
+                if (option.text.toUpperCase().includes('TODOS') || option.value === '0' || option.value === '') {{
+                    allSelects[2].value = option.value;
+                    allSelects[2].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    resultado.diaDesde = true;
+                    break;
+                }}
+            }}
         }}
         
-        const fechaDesde = findDateInput('desde') || findDateInput('from');
-        const fechaHasta = findDateInput('hasta') || findDateInput('to');
-        
-        if (fechaDesde) {{
-            fechaDesde.value = '{desde}';
-            fechaDesde.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            fechaDesde.dispatchEvent(new Event('change', {{ bubbles: true }}));
-        }}
-        
-        if (fechaHasta) {{
-            fechaHasta.value = '{hasta}';
-            fechaHasta.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            fechaHasta.dispatchEvent(new Event('change', {{ bubbles: true }}));
-        }}
-        
-        return {{ desde: !!fechaDesde, hasta: !!fechaHasta }};
+        return resultado;
         """
         
         resultado = driver.execute_script(script_fechas)
-        print(f"Campos de fecha encontrados: {resultado}")
+        print(f"Selects configurados: {resultado}")
         
-        # Buscar y hacer clic en el botón de consultar/buscar
+        time.sleep(2)
+        
+        # Buscar y hacer clic en el botón de consultar
         script_boton = """
-        const botones = document.querySelectorAll('button, input[type="submit"]');
+        const botones = document.querySelectorAll('button, input[type="submit"], a');
         for (let btn of botones) {
-            const texto = btn.textContent || btn.value || '';
-            if (texto.toLowerCase().includes('consultar') || 
-                texto.toLowerCase().includes('buscar') ||
-                texto.toLowerCase().includes('filtrar')) {
+            const texto = (btn.textContent || btn.value || '').toLowerCase();
+            if (texto.includes('consultar') || 
+                texto.includes('buscar') ||
+                texto.includes('filtrar') ||
+                btn.className.toLowerCase().includes('consultar')) {
                 btn.click();
                 return true;
             }
+        }
+        // Buscar por icono o clase específica
+        const btnConsultar = document.querySelector('.ui-button, .btn-consultar, [id*="consultar"], [id*="Consultar"]');
+        if (btnConsultar) {
+            btnConsultar.click();
+            return true;
         }
         return false;
         """
@@ -222,15 +268,18 @@ def filtrar_fechas(driver, desde, hasta):
         
     except Exception as e:
         print(f"⚠️ Error al filtrar fechas: {e}")
-        # No lanzar excepción para continuar con la ejecución
+        import traceback
+        traceback.print_exc()
 
 
-def descargar_xmls(driver):
+def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True):
     """
-    Descarga los archivos XML de las facturas mostradas en la tabla
+    Descarga los archivos XML y/o PDF de las facturas mostradas en la tabla
+    Las columnas son: Documento (XML) y RIDE (PDF)
     """
     wait = WebDriverWait(driver, 20)
-    total_descargados = 0
+    total_xml = 0
+    total_pdf = 0
     pagina = 1
     
     while True:
@@ -238,92 +287,175 @@ def descargar_xmls(driver):
         time.sleep(3)
         
         try:
-            # Buscar todos los botones de descarga en la página actual
-            script_descargas = """
-            const botonesDescarga = [];
-            const filas = document.querySelectorAll('table tr, .ui-datatable-data tr, .data-table tr');
+            # Encontrar todas las filas de la tabla
+            script_filas = """
+            // Buscar la tabla principal
+            const tablas = document.querySelectorAll('table');
+            let tablaPrincipal = null;
             
-            filas.forEach((fila, index) => {
-                // Buscar botones o enlaces de descarga en cada fila
-                const botones = fila.querySelectorAll('button, a, img');
-                botones.forEach(btn => {
-                    const onclick = btn.getAttribute('onclick') || '';
-                    const title = btn.getAttribute('title') || '';
-                    const alt = btn.getAttribute('alt') || '';
-                    
-                    // Buscar indicadores de descarga XML
-                    if (onclick.includes('xml') || onclick.includes('XML') ||
-                        title.toLowerCase().includes('xml') || 
-                        alt.toLowerCase().includes('xml') ||
-                        btn.className.toLowerCase().includes('xml')) {
-                        botonesDescarga.push({
-                            index: index,
-                            element: btn
-                        });
+            for (let tabla of tablas) {
+                // Buscar tabla que tenga encabezados Documento o RIDE
+                const encabezados = tabla.querySelectorAll('th, td');
+                for (let th of encabezados) {
+                    const texto = (th.innerText || th.textContent || '').toUpperCase();
+                    if (texto.includes('DOCUMENTO') || texto.includes('RIDE')) {
+                        tablaPrincipal = tabla;
+                        break;
                     }
-                });
+                }
+                if (tablaPrincipal) break;
+            }
+            
+            if (!tablaPrincipal) {
+                // Intentar con clases comunes de PrimeFaces
+                tablaPrincipal = document.querySelector('.ui-datatable-table, .ui-table, .data-table');
+            }
+            
+            if (!tablaPrincipal) return { filas: 0, encabezados: [] };
+            
+            // Obtener índices de columnas
+            const encabezados = tablaPrincipal.querySelectorAll('th');
+            let colDocumento = -1;
+            let colRide = -1;
+            
+            encabezados.forEach((th, index) => {
+                const texto = (th.innerText || th.textContent || '').toUpperCase();
+                if (texto.includes('DOCUMENTO')) colDocumento = index;
+                if (texto.includes('RIDE')) colRide = index;
             });
             
-            return botonesDescarga.length;
+            // Contar filas de datos (excluyendo encabezado)
+            const filas = tablaPrincipal.querySelectorAll('tbody tr, tr');
+            const filasDatos = [...filas].filter(fila => {
+                const celdas = fila.querySelectorAll('td');
+                return celdas.length > 2; // Es una fila de datos, no encabezado
+            });
+            
+            return {
+                filas: filasDatos.length,
+                colDocumento: colDocumento,
+                colRide: colRide
+            };
             """
             
-            cantidad_botones = driver.execute_script(script_descargas)
-            print(f"   Encontrados {cantidad_botones} botones de descarga")
+            info_tabla = driver.execute_script(script_filas)
+            print(f"   Filas encontradas: {info_tabla['filas']}, Col Documento: {info_tabla['colDocumento']}, Col RIDE: {info_tabla['colRide']}")
             
-            if cantidad_botones == 0:
+            if info_tabla['filas'] == 0:
                 print("   No hay más facturas para descargar")
                 break
             
-            # Descargar cada XML haciendo clic en los botones
-            for i in range(cantidad_botones):
-                script_click = f"""
-                const filas = document.querySelectorAll('table tr, .ui-datatable-data tr, .data-table tr');
-                let count = 0;
-                for (let fila of filas) {{
-                    const botones = fila.querySelectorAll('button, a, img');
-                    for (let btn of botones) {{
-                        const onclick = btn.getAttribute('onclick') || '';
-                        const title = btn.getAttribute('title') || '';
-                        const alt = btn.getAttribute('alt') || '';
-                        
-                        if (onclick.includes('xml') || onclick.includes('XML') ||
-                            title.toLowerCase().includes('xml') || 
-                            alt.toLowerCase().includes('xml') ||
-                            btn.className.toLowerCase().includes('xml')) {{
-                            if (count === {i}) {{
-                                btn.click();
-                                return true;
+            # Descargar documentos fila por fila
+            for i in range(info_tabla['filas']):
+                # Descargar XML (columna Documento)
+                if descargar_xml and info_tabla['colDocumento'] >= 0:
+                    script_xml = f"""
+                    const tablas = document.querySelectorAll('table');
+                    let tabla = null;
+                    for (let t of tablas) {{
+                        const encabezados = t.querySelectorAll('th');
+                        for (let th of encabezados) {{
+                            if ((th.innerText || '').toUpperCase().includes('DOCUMENTO')) {{
+                                tabla = t;
+                                break;
                             }}
-                            count++;
+                        }}
+                        if (tabla) break;
+                    }}
+                    
+                    if (!tabla) tabla = document.querySelector('.ui-datatable-table, .ui-table');
+                    
+                    if (tabla) {{
+                        const filas = [...tabla.querySelectorAll('tbody tr, tr')].filter(f => f.querySelectorAll('td').length > 2);
+                        if (filas[{i}]) {{
+                            const celdas = filas[{i}].querySelectorAll('td');
+                            const celdaDocumento = celdas[{info_tabla['colDocumento']}];
+                            if (celdaDocumento) {{
+                                // Buscar icono/enlace en la celda
+                                const icono = celdaDocumento.querySelector('a, button, img, i, span');
+                                if (icono) {{
+                                    icono.click();
+                                    return true;
+                                }}
+                            }}
                         }}
                     }}
-                }}
-                return false;
-                """
+                    return false;
+                    """
+                    
+                    resultado = driver.execute_script(script_xml)
+                    if resultado:
+                        total_xml += 1
+                        time.sleep(1.5)  # Esperar descarga
                 
-                resultado = driver.execute_script(script_click)
-                if resultado:
-                    total_descargados += 1
-                    time.sleep(1.5)  # Esperar entre descargas
+                # Descargar PDF (columna RIDE)
+                if descargar_pdf and info_tabla['colRide'] >= 0:
+                    script_pdf = f"""
+                    const tablas = document.querySelectorAll('table');
+                    let tabla = null;
+                    for (let t of tablas) {{
+                        const encabezados = t.querySelectorAll('th');
+                        for (let th of encabezados) {{
+                            if ((th.innerText || '').toUpperCase().includes('RIDE')) {{
+                                tabla = t;
+                                break;
+                            }}
+                        }}
+                        if (tabla) break;
+                    }}
+                    
+                    if (!tabla) tabla = document.querySelector('.ui-datatable-table, .ui-table');
+                    
+                    if (tabla) {{
+                        const filas = [...tabla.querySelectorAll('tbody tr, tr')].filter(f => f.querySelectorAll('td').length > 2);
+                        if (filas[{i}]) {{
+                            const celdas = filas[{i}].querySelectorAll('td');
+                            const celdaRide = celdas[{info_tabla['colRide']}];
+                            if (celdaRide) {{
+                                // Buscar icono/enlace en la celda
+                                const icono = celdaRide.querySelector('a, button, img, i, span');
+                                if (icono) {{
+                                    icono.click();
+                                    return true;
+                                }}
+                            }}
+                        }}
+                    }}
+                    return false;
+                    """
+                    
+                    resultado = driver.execute_script(script_pdf)
+                    if resultado:
+                        total_pdf += 1
+                        time.sleep(1.5)  # Esperar descarga
                 
-                if total_descargados % 10 == 0:
-                    print(f"   Descargados: {total_descargados}")
+                # Progreso cada 5 documentos
+                if (total_xml + total_pdf) % 5 == 0:
+                    print(f"   Progreso - XMLs: {total_xml}, PDFs: {total_pdf}")
             
             # Verificar si hay siguiente página
             script_siguiente = """
+            // Buscar botón de siguiente página
             const botonesPagina = document.querySelectorAll('button, a, span');
             for (let btn of botonesPagina) {
-                const texto = btn.textContent || '';
-                if ((texto.includes('>') || texto.includes('Siguiente') || 
-                     texto.includes('Next')) && !btn.disabled) {
+                const texto = (btn.textContent || '').toLowerCase();
+                if ((texto.includes('>') || texto.includes('siguiente') || 
+                     texto.includes('next') || texto.includes('»')) && 
+                     !btn.disabled && !btn.className.includes('disabled')) {
                     btn.click();
                     return true;
                 }
             }
-            // Buscar por clase común de paginación
+            // Buscar por clase común de paginación PrimeFaces
             const nextBtn = document.querySelector('.ui-paginator-next:not(.ui-state-disabled)');
             if (nextBtn) {
                 nextBtn.click();
+                return true;
+            }
+            // Buscar por icono de flecha
+            const nextIcon = document.querySelector('.ui-icon-seek-next, .fa-forward, .fa-step-forward');
+            if (nextIcon) {
+                nextIcon.click();
                 return true;
             }
             return false;
@@ -339,7 +471,19 @@ def descargar_xmls(driver):
             time.sleep(3)
             
         except Exception as e:
-            print(f"⚠️ Error al descargar XMLs: {e}")
+            print(f"⚠️ Error al descargar documentos: {e}")
+            import traceback
+            traceback.print_exc()
             break
     
-    print(f"✅ Total de XMLs descargados: {total_descargados}")
+    print(f"✅ Descarga completada - XMLs: {total_xml}, PDFs: {total_pdf}")
+    return {'xml': total_xml, 'pdf': total_pdf}
+
+
+# Función legacy para mantener compatibilidad
+def descargar_xmls(driver):
+    """
+    Función legacy - ahora usa descargar_documentos
+    """
+    resultado = descargar_documentos(driver, descargar_xml=True, descargar_pdf=False)
+    return resultado['xml']
