@@ -398,7 +398,8 @@ def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True):
             
             encabezados.forEach((th, index) => {
                 const texto = (th.innerText || th.textContent || '').toUpperCase();
-                if (texto.includes('DOCUMENTO')) colDocumento = index;
+                // Buscar DOCUMENTO pero excluir DOCUMENTOS RELACIONADOS
+                if (texto.includes('DOCUMENTO') && !texto.includes('RELACIONADOS')) colDocumento = index;
                 if (texto.includes('RIDE')) colRide = index;
             });
             
@@ -433,7 +434,9 @@ def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True):
                     for (let t of tablas) {{
                         const encabezados = t.querySelectorAll('th');
                         for (let th of encabezados) {{
-                            if ((th.innerText || '').toUpperCase().includes('DOCUMENTO')) {{
+                            const texto = (th.innerText || '').toUpperCase();
+                            // Buscar DOCUMENTO pero excluir DOCUMENTOS RELACIONADOS
+                            if (texto.includes('DOCUMENTO') && !texto.includes('RELACIONADOS')) {{
                                 tabla = t;
                                 break;
                             }}
@@ -464,7 +467,7 @@ def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True):
                     resultado = driver.execute_script(script_xml)
                     if resultado:
                         total_xml += 1
-                        time.sleep(1.5)  # Esperar descarga
+                        time.sleep(3)  # Esperar descarga
                 
                 # Descargar PDF (columna RIDE)
                 if descargar_pdf and info_tabla['colRide'] >= 0:
@@ -505,7 +508,7 @@ def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True):
                     resultado = driver.execute_script(script_pdf)
                     if resultado:
                         total_pdf += 1
-                        time.sleep(1.5)  # Esperar descarga
+                        time.sleep(3)  # Esperar descarga
                 
                 # Progreso cada 5 documentos
                 if (total_xml + total_pdf) % 5 == 0:
