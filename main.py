@@ -25,14 +25,20 @@ os.makedirs(EMITIDAS_PATH, exist_ok=True)
 
 # Configurar opciones de Chrome para descargas automáticas
 options = Options()
+
+# Usar rutas absolutas para los directorios de descarga
+recibidas_abs = os.path.abspath(RECIBIDAS_PATH)
+
 options.add_experimental_option("prefs", {
-    "download.default_directory": RECIBIDAS_PATH,
+    "download.default_directory": recibidas_abs,
     "download.prompt_for_download": False,
     "download.directory_upgrade": True,
     "safebrowsing.enabled": True,
     "safebrowsing.disable_download_protection": True,
     "profile.default_content_setting_values.automatic_downloads": 1
 })
+
+print(f"Directorio de descarga configurado: {recibidas_abs}")
 
 # Opciones adicionales para evitar problemas de descarga
 options.add_argument("--disable-features=DownloadBubble,DownloadBubbleV2")
