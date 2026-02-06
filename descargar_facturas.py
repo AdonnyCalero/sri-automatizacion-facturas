@@ -1,8 +1,97 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 import time
+import os
+import requests
+from urllib.parse import urljoin, urlparse
 from guardar_html import guardar_html
+
+
+def descargar_archivo_con_sesion(driver, url, directorio, nombre_archivo=None):
+    """
+    Descarga un archivo usando las cookies de sesión del driver de Selenium
+    """
+    try:
+        # Obtener cookies del driver
+        cookies = driver.get_cookies()
+        
+        # Crear sesión de requests
+        session = requests.Session()
+        
+        # Agregar cookies a la sesión
+        for cookie in cookies:
+            session.cookies.set(cookie['name'], cookie['value'])
+        
+        # Headers para simular navegador
+        headers = {
+            'User-Agent': driver.execute_script("return navigator.userAgent;"),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3',
+            'Referer': driver.current_url
+        }
+        
+        # Descargar archivo
+        response = session.get(url, headers=headers, timeout=30, allow_redirects=True)
+        response.raise_for_status()
+        
+        # Si no se proporcionó nombre, intentar obtenerlo del Content-Disposition
+        if not nombre_archivo:
+            content_disposition = response.headers.get('Content-Disposition', '')
+            if 'filename=' in content_disposition:
+                nombre_archivo = content_disposition.split('filename=')[1].strip('"\'')
+            else:
+                # Usar el nombre de la URL
+                nombre_archivo = os.path.basename(urlparse(url).path) or 'archivo_descargado'
+        
+        # Asegurar extensión
+        if not nombre_archivo.endswith(('.xml', '.pdf')):
+            content_type = response.headers.get('Content-Type', '')
+            if 'xml' in content_type:
+                nombre_archivo += '.xml'
+            elif 'pdf' in content_type:
+                nombre_archivo += '.pdf'
+        
+        # Guardar archivo
+        ruta_completa = os.path.join(directorio, nombre_archivo)
+        
+        # Si el archivo ya existe, agregar número
+        contador = 1
+        nombre_base, extension = os.path.splitext(ruta_completa)
+        while os.path.exists(ruta_completa):
+            ruta_completa = f"{nombre_base}_{contador}{extension}"
+            contador += 1
+        
+        with open(ruta_completa, 'wb') as f:
+            f.write(response.content)
+        
+        print(f"   ✓ Descargado: {os.path.basename(ruta_completa)}")
+        return True
+        
+    except Exception as e:
+        print(f"   ✗ Error descargando {url}: {str(e)[:50]}")
+        return False
+
+
+def verificar_descarga(directorio, timeout=10):
+    """
+    Espera a que aparezca un nuevo archivo en el directorio de descargas
+    Retorna True si se detecta un nuevo archivo, False en caso contrario
+    """
+    tiempo_inicio = time.time()
+    archivos_antes = set(os.listdir(directorio)) if os.path.exists(directorio) else set()
+    
+    while time.time() - tiempo_inicio < timeout:
+        time.sleep(0.5)
+        if os.path.exists(directorio):
+            archivos_despues = set(os.listdir(directorio))
+            archivos_nuevos = archivos_despues - archivos_antes
+            # Filtrar archivos temporales de descarga (.crdownload, .tmp)
+            archivos_nuevos = [f for f in archivos_nuevos if not f.endswith(('.crdownload', '.tmp'))]
+            if archivos_nuevos:
+                return True
+    return False
 
 
 def cambiar_a_iframe_menu(driver):
@@ -350,15 +439,81 @@ def filtrar_fechas(driver, desde, hasta, ruc=None):
         traceback.print_exc()
 
 
-def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True):
+def extraer_urls_descarga(driver, fila_idx, col_idx):
+    """
+    Extrae las URLs de descarga de una fila específica
+    """
+    script = f"""
+    const tablas = document.querySelectorAll('table');
+    let tabla = null;
+    for (let t of tablas) {{
+        const encabezados = t.querySelectorAll('th');
+        for (let th of encabezados) {{
+            const texto = (th.innerText || '').toUpperCase();
+            if (texto.includes('DOCUMENTO') || texto.includes('RIDE')) {{
+                tabla = t;
+                break;
+            }}
+        }}
+        if (tabla) break;
+    }}
+    
+    if (!tabla) tabla = document.querySelector('.ui-datatable-table, .ui-table');
+    
+    if (tabla) {{
+        const filas = [...tabla.querySelectorAll('tbody tr, tr')].filter(f => f.querySelectorAll('td').length > 2);
+        if (filas[{fila_idx}]) {{
+            const celdas = filas[{fila_idx}].querySelectorAll('td');
+            const celda = celdas[{col_idx}];
+            if (celda) {{
+                const enlaces = celda.querySelectorAll('a');
+                const urls = [];
+                for (let enlace of enlaces) {{
+                    let url = enlace.getAttribute('href') || '';
+                    const onclick = enlace.getAttribute('onclick') || '';
+                    
+                    // Si no hay href, intentar extraer de onclick
+                    if (!url && onclick) {{
+                        // Buscar patrones como: window.open('url'), location.href='url', etc.
+                        const match = onclick.match(/['"`]([^'"`]*\.(?:xml|pdf))['"`]/i);
+                        if (match) url = match[1];
+                    }}
+                    
+                    if (url) {{
+                        urls.push({{
+                            url: url,
+                            title: enlace.title || '',
+                            text: enlace.textContent || ''
+                        }});
+                    }}
+                }}
+                return urls;
+            }}
+        }}
+    }}
+    return [];
+    """
+    return driver.execute_script(script)
+
+
+def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True, directorio_descarga=None):
     """
     Descarga los archivos XML y/o PDF de las facturas mostradas en la tabla
-    Las columnas son: Documento (XML) y RIDE (PDF)
+    Usa requests con las cookies de sesión para evitar errores de descarga
     """
     wait = WebDriverWait(driver, 20)
     total_xml = 0
     total_pdf = 0
+    total_xml_fallidos = 0
+    total_pdf_fallidos = 0
     pagina = 1
+    
+    # Obtener directorio de descarga actual del driver
+    if not directorio_descarga:
+        directorio_descarga = "facturas_xml/recibidas"  # Default
+    
+    # Asegurar que el directorio existe
+    os.makedirs(directorio_descarga, exist_ok=True)
     
     while True:
         print(f"📄 Procesando página {pagina}...")
@@ -428,90 +583,69 @@ def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True):
             for i in range(info_tabla['filas']):
                 # Descargar XML (columna Documento)
                 if descargar_xml and info_tabla['colDocumento'] >= 0:
-                    script_xml = f"""
-                    const tablas = document.querySelectorAll('table');
-                    let tabla = null;
-                    for (let t of tablas) {{
-                        const encabezados = t.querySelectorAll('th');
-                        for (let th of encabezados) {{
-                            const texto = (th.innerText || '').toUpperCase();
-                            // Buscar DOCUMENTO pero excluir DOCUMENTOS RELACIONADOS
-                            if (texto.includes('DOCUMENTO') && !texto.includes('RELACIONADOS')) {{
-                                tabla = t;
-                                break;
-                            }}
-                        }}
-                        if (tabla) break;
-                    }}
+                    urls_xml = extraer_urls_descarga(driver, i, info_tabla['colDocumento'])
                     
-                    if (!tabla) tabla = document.querySelector('.ui-datatable-table, .ui-table');
+                    # Buscar URL que parezca ser XML
+                    url_xml = None
+                    for url_info in urls_xml:
+                        if 'xml' in url_info['url'].lower() or 'xml' in url_info['title'].lower():
+                            url_xml = url_info['url']
+                            break
+                    # Si no encontramos específicamente XML, usar la primera URL
+                    if not url_xml and urls_xml:
+                        url_xml = urls_xml[0]['url']
                     
-                    if (tabla) {{
-                        const filas = [...tabla.querySelectorAll('tbody tr, tr')].filter(f => f.querySelectorAll('td').length > 2);
-                        if (filas[{i}]) {{
-                            const celdas = filas[{i}].querySelectorAll('td');
-                            const celdaDocumento = celdas[{info_tabla['colDocumento']}];
-                            if (celdaDocumento) {{
-                                // Buscar icono/enlace en la celda
-                                const icono = celdaDocumento.querySelector('a, button, img, i, span');
-                                if (icono) {{
-                                    icono.click();
-                                    return true;
-                                }}
-                            }}
-                        }}
-                    }}
-                    return false;
-                    """
+                    if url_xml:
+                        # Completar URL si es relativa
+                        if not url_xml.startswith('http'):
+                            url_xml = urljoin(driver.current_url, url_xml)
+                        
+                        # Descargar usando sesión
+                        if descargar_archivo_con_sesion(driver, url_xml, directorio_descarga, f"factura_{pagina}_{i+1}.xml"):
+                            total_xml += 1
+                        else:
+                            total_xml_fallidos += 1
+                            print(f"   ⚠️ XML fila {i+1} no se descargó correctamente")
+                    else:
+                        total_xml_fallidos += 1
+                        print(f"   ⚠️ No se encontró URL de XML en fila {i+1}")
                     
-                    resultado = driver.execute_script(script_xml)
-                    if resultado:
-                        total_xml += 1
-                        time.sleep(3)  # Esperar descarga
+                    time.sleep(1)  # Pausa entre descargas
                 
                 # Descargar PDF (columna RIDE)
                 if descargar_pdf and info_tabla['colRide'] >= 0:
-                    script_pdf = f"""
-                    const tablas = document.querySelectorAll('table');
-                    let tabla = null;
-                    for (let t of tablas) {{
-                        const encabezados = t.querySelectorAll('th');
-                        for (let th of encabezados) {{
-                            if ((th.innerText || '').toUpperCase().includes('RIDE')) {{
-                                tabla = t;
-                                break;
-                            }}
-                        }}
-                        if (tabla) break;
-                    }}
+                    urls_pdf = extraer_urls_descarga(driver, i, info_tabla['colRide'])
                     
-                    if (!tabla) tabla = document.querySelector('.ui-datatable-table, .ui-table');
+                    # Buscar URL que parezca ser PDF/RIDE
+                    url_pdf = None
+                    for url_info in urls_pdf:
+                        if any(x in url_info['url'].lower() for x in ['pdf', 'ride']) or \
+                           any(x in url_info['title'].lower() for x in ['pdf', 'ride']):
+                            url_pdf = url_info['url']
+                            break
+                    # Si no encontramos específicamente PDF, usar la primera URL
+                    if not url_pdf and urls_pdf:
+                        url_pdf = urls_pdf[0]['url']
                     
-                    if (tabla) {{
-                        const filas = [...tabla.querySelectorAll('tbody tr, tr')].filter(f => f.querySelectorAll('td').length > 2);
-                        if (filas[{i}]) {{
-                            const celdas = filas[{i}].querySelectorAll('td');
-                            const celdaRide = celdas[{info_tabla['colRide']}];
-                            if (celdaRide) {{
-                                // Buscar icono/enlace en la celda
-                                const icono = celdaRide.querySelector('a, button, img, i, span');
-                                if (icono) {{
-                                    icono.click();
-                                    return true;
-                                }}
-                            }}
-                        }}
-                    }}
-                    return false;
-                    """
+                    if url_pdf:
+                        # Completar URL si es relativa
+                        if not url_pdf.startswith('http'):
+                            url_pdf = urljoin(driver.current_url, url_pdf)
+                        
+                        # Descargar usando sesión
+                        if descargar_archivo_con_sesion(driver, url_pdf, directorio_descarga, f"factura_{pagina}_{i+1}.pdf"):
+                            total_pdf += 1
+                        else:
+                            total_pdf_fallidos += 1
+                            print(f"   ⚠️ PDF fila {i+1} no se descargó correctamente")
+                    else:
+                        total_pdf_fallidos += 1
+                        print(f"   ⚠️ No se encontró URL de PDF en fila {i+1}")
                     
-                    resultado = driver.execute_script(script_pdf)
-                    if resultado:
-                        total_pdf += 1
-                        time.sleep(3)  # Esperar descarga
+                    time.sleep(1)  # Pausa entre descargas
                 
                 # Progreso cada 5 documentos
-                if (total_xml + total_pdf) % 5 == 0:
+                if (total_xml + total_pdf) % 5 == 0 and (total_xml + total_pdf) > 0:
                     print(f"   Progreso - XMLs: {total_xml}, PDFs: {total_pdf}")
             
             # Verificar si hay siguiente página
@@ -558,6 +692,8 @@ def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True):
             break
     
     print(f"✅ Descarga completada - XMLs: {total_xml}, PDFs: {total_pdf}")
+    if total_xml_fallidos > 0 or total_pdf_fallidos > 0:
+        print(f"❌ Fallidos - XMLs: {total_xml_fallidos}, PDFs: {total_pdf_fallidos}")
     return {'xml': total_xml, 'pdf': total_pdf}
 
 

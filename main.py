@@ -2,6 +2,8 @@
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+import os
 from config import (
     RECIBIDAS_PATH,
     EMITIDAS_PATH,
@@ -17,7 +19,27 @@ from descargar_facturas import (
 from generar_excel import generar_excel
 from guardar_html import guardar_html
 
+# Crear directorios de descarga si no existen
+os.makedirs(RECIBIDAS_PATH, exist_ok=True)
+os.makedirs(EMITIDAS_PATH, exist_ok=True)
+
+# Configurar opciones de Chrome para descargas automáticas
 options = Options()
+options.add_experimental_option("prefs", {
+    "download.default_directory": RECIBIDAS_PATH,
+    "download.prompt_for_download": False,
+    "download.directory_upgrade": True,
+    "safebrowsing.enabled": True,
+    "safebrowsing.disable_download_protection": True,
+    "profile.default_content_setting_values.automatic_downloads": 1
+})
+
+# Opciones adicionales para evitar problemas de descarga
+options.add_argument("--disable-features=DownloadBubble,DownloadBubbleV2")
+options.add_argument("--disable-web-security")
+options.add_argument("--allow-running-insecure-content")
+options.add_argument("--disable-extensions")
+
 driver = webdriver.Chrome(options=options)
 
 try:
@@ -58,7 +80,7 @@ try:
     guardar_html(driver, "03_recibidas_filtradas")
 
     print("Descargando documentos recibidos (XML y PDF)...")
-    descargar_documentos(driver, descargar_xml=True, descargar_pdf=True)
+    descargar_documentos(driver, descargar_xml=True, descargar_pdf=True, directorio_descarga=RECIBIDAS_PATH)
 
     # ========= FACTURAS EMITIDAS =========
     driver.execute_cdp_cmd(
@@ -75,7 +97,7 @@ try:
     guardar_html(driver, "05_emitidas_filtradas")
 
     print("Descargando documentos emitidos (XML y PDF)...")
-    descargar_documentos(driver, descargar_xml=True, descargar_pdf=True)
+    descargar_documentos(driver, descargar_xml=True, descargar_pdf=True, directorio_descarga=EMITIDAS_PATH)
 
 finally:
     driver.quit()
