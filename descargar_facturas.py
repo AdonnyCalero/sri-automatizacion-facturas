@@ -3,13 +3,14 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import os
+import requests
 from guardar_html import guardar_html
 
 
-def descargar_reporte_txt(driver, directorio_descarga=None, max_intentos=3):
+def descargar_reporte_txt_requests(driver, directorio_descarga=None):
     """
-    Descarga el reporte TXT haciendo clic en el botón "Descargar reporte"
-    Este método es más simple y eficiente que descargar uno por uno
+    Descarga el reporte TXT usando requests con las cookies de sesión de Selenium
+    Este método es más confiable que hacer clic en el navegador
     """
     if not directorio_descarga:
         directorio_descarga = "facturas_xml/recibidas"
@@ -17,83 +18,146 @@ def descargar_reporte_txt(driver, directorio_descarga=None, max_intentos=3):
     # Asegurar que el directorio existe
     os.makedirs(directorio_descarga, exist_ok=True)
     
+    try:
+        print("   Descargando reporte con requests...")
+        
+        # Obtener cookies del driver
+        cookies = driver.get_cookies()
+        session = requests.Session()
+        
+        # Agregar cookies a la sesión
+        for cookie in cookies:
+            session.cookies.set(cookie['name'], cookie['value'])
+        
+        # Headers para simular navegador
+        headers = {
+            'User-Agent': driver.execute_script("return navigator.userAgent;"),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3',
+            'Referer': driver.current_url,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        
+        # Obtener ViewState
+        try:
+            viewstate = driver.find_element(By.NAME, "javax.faces.ViewState").get_attribute("value")
+        except:
+            viewstate = ""
+        
+        # Datos del formulario para descargar el reporte
+        data = {
+            "frmPrincipal": "frmPrincipal",
+            "frmPrincipal:lnkTxtlistado": "frmPrincipal:lnkTxtlistado",
+            "javax.faces.ViewState": viewstate
+        }
+        
+        # Hacer la petición POST
+        url = driver.current_url
+        response = session.post(url, data=data, headers=headers, timeout=30, allow_redirects=True)
+        
+        if response.status_code == 200:
+            # Verificar que no sea HTML (que sería un error)
+            content_type = response.headers.get('Content-Type', '')
+            
+            if 'text/html' in content_type:
+                # Guardar HTML de error para debug
+                debug_file = os.path.join(directorio_descarga, "debug_reporte_error.html")
+                with open(debug_file, 'wb') as f:
+                    f.write(response.content)
+                print(f"   ⚠️ La respuesta es HTML (error). Guardado en: {debug_file}")
+                return False
+            
+            # Determinar extensión
+            if 'text/plain' in content_type or response.content.startswith(b'Clave'):
+                extension = 'txt'
+            else:
+                extension = 'txt'  # Por defecto
+            
+            # Generar nombre de archivo
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            nombre_archivo = f"reporte_sri_{timestamp}.{extension}"
+            ruta_archivo = os.path.join(directorio_descarga, nombre_archivo)
+            
+            # Guardar archivo
+            with open(ruta_archivo, 'wb') as f:
+                f.write(response.content)
+            
+            print(f"   ✅ Reporte descargado: {nombre_archivo}")
+            print(f"   📁 Tamaño: {len(response.content)} bytes")
+            print(f"   📂 Ubicación: {ruta_archivo}")
+            return True
+        else:
+            print(f"   ⚠️ Error HTTP: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"   ⚠️ Error: {str(e)[:100]}")
+        return False
+
+
+def descargar_reporte_txt(driver, directorio_descarga=None, max_intentos=3):
+    """
+    Intenta descargar el reporte primero con requests, si falla intenta con Selenium
+    """
+    if not directorio_descarga:
+        directorio_descarga = "facturas_xml/recibidas"
+    
+    # Intentar primero con requests
+    if descargar_reporte_txt_requests(driver, directorio_descarga):
+        return True
+    
+    # Si falla, intentar con Selenium (método anterior)
+    print("   Intentando método alternativo (Selenium)...")
+    
     for intento in range(max_intentos):
         try:
-            # Registrar archivos existentes antes de descargar
             archivos_antes = set(os.listdir(directorio_descarga))
             
-            print("   Buscando botón 'Descargar reporte'...")
-            
-            # Intentar encontrar el enlace de descarga del reporte
-            # El ID del botón es: frmPrincipal:lnkTxtlistado
+            # Buscar el botón
             try:
                 boton_descarga = driver.find_element(By.ID, "frmPrincipal:lnkTxtlistado")
             except:
-                # Si no lo encuentra por ID, buscar por texto
                 script = """
                 const enlaces = document.querySelectorAll('a');
                 for (let enlace of enlaces) {
                     const texto = enlace.innerText || enlace.textContent || '';
-                    if (texto.toLowerCase().includes('descargar reporte') || 
-                        texto.toLowerCase().includes('exportar txt') ||
-                        texto.toLowerCase().includes('descargar')) {
+                    if (texto.toLowerCase().includes('descargar reporte')) {
                         return enlace.id;
                     }
                 }
                 return null;
                 """
                 boton_id = driver.execute_script(script)
-                if boton_id:
-                    boton_descarga = driver.find_element(By.ID, boton_id)
-                else:
-                    print("   ⚠️ No se encontró el botón de descarga")
+                if not boton_id:
                     return False
+                boton_descarga = driver.find_element(By.ID, boton_id)
             
-            print("   ✅ Botón encontrado, haciendo clic...")
+            # Hacer clic normal (no con JavaScript)
+            boton_descarga.click()
             
-            # Hacer clic en el botón usando JavaScript
-            driver.execute_script("arguments[0].scrollIntoView(true);", boton_descarga)
-            time.sleep(0.5)
-            driver.execute_script("arguments[0].click();", boton_descarga)
-            
-            # Esperar a que aparezca el archivo descargado
-            print("   ⏳ Esperando descarga...")
+            # Esperar
             tiempo_espera = 0
-            archivo_descargado = False
-            archivo_nuevo = None
-            
-            while tiempo_espera < 30:  # Esperar hasta 30 segundos
+            while tiempo_espera < 20:
                 time.sleep(1)
                 tiempo_espera += 1
                 
                 try:
                     archivos_despues = set(os.listdir(directorio_descarga))
                     archivos_nuevos = archivos_despues - archivos_antes
-                    # Filtrar archivos temporales
                     archivos_nuevos = [f for f in archivos_nuevos if not f.endswith(('.crdownload', '.tmp'))]
                     
                     if archivos_nuevos:
-                        archivo_nuevo = archivos_nuevos[0]
-                        archivo_descargado = True
-                        break
+                        print(f"   ✅ Descargado: {archivos_nuevos[0]}")
+                        return True
                 except:
                     continue
             
-            if archivo_descargado and archivo_nuevo:
-                ruta_archivo = os.path.join(directorio_descarga, archivo_nuevo)
-                print(f"   ✅ Archivo descargado: {archivo_nuevo}")
-                print(f"   📁 Ubicación: {ruta_archivo}")
-                return True
-            else:
-                print(f"   ⚠️ Timeout esperando descarga (intento {intento + 1}/{max_intentos})")
-                if intento < max_intentos - 1:
-                    time.sleep(3)
-                continue
+            if intento < max_intentos - 1:
+                time.sleep(2)
                 
         except Exception as e:
-            print(f"   ⚠️ Error en intento {intento + 1}: {str(e)[:100]}")
             if intento < max_intentos - 1:
-                time.sleep(3)
+                time.sleep(2)
             continue
     
     return False
@@ -101,9 +165,9 @@ def descargar_reporte_txt(driver, directorio_descarga=None, max_intentos=3):
 
 def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True, directorio_descarga=None):
     """
-    Descarga el reporte TXT completo en lugar de archivos individuales
+    Descarga el reporte TXT completo
     """
-    print("📄 Descargando reporte completo...")
+    print("📄 Descargando reporte...")
     
     exito = descargar_reporte_txt(driver, directorio_descarga)
     
@@ -112,6 +176,7 @@ def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True, directo
         return {'xml': 1, 'pdf': 0}
     else:
         print("\n❌ No se pudo descargar el reporte")
+        print("💡 Sugerencia: Intenta hacer clic manualmente en el botón 'Descargar reporte'")
         return {'xml': 0, 'pdf': 0}
 
 
@@ -240,7 +305,7 @@ def ir_a_comprobantes(driver, tipo):
 
 
 def filtrar_fechas(driver, desde, hasta, ruc=None):
-    """Filtra facturas por rango de fechas y luego descarga el reporte"""
+    """Filtra facturas por rango de fechas y descarga el reporte"""
     wait = WebDriverWait(driver, 20)
     
     try:
