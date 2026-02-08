@@ -23,20 +23,25 @@ def leer_reporte_txt(ruta_archivo=None):
     """
     # Si no se especifica ruta, buscar el archivo TXT ms reciente
     if ruta_archivo is None:
-        # Buscar especficamente en la carpeta de recibidas
+        # Buscar en ambas carpetas: recibidas y emitidas
+        archivos_txt = []
+        
+        # Buscar en recibidas
         if os.path.exists(RECIBIDAS_PATH):
-            archivos_txt = glob.glob(os.path.join(RECIBIDAS_PATH, "*.txt"))
-            
-            if not archivos_txt:
-                print(f" No se encontraron archivos TXT en {RECIBIDAS_PATH}")
-                return None
-            
-            # Tomar el archivo ms reciente
-            ruta_archivo = max(archivos_txt, key=os.path.getctime)
-            print(f" Archivo encontrado: {os.path.basename(ruta_archivo)}")
-        else:
-            print(f" La carpeta {RECIBIDAS_PATH} no existe")
+            archivos_txt.extend(glob.glob(os.path.join(RECIBIDAS_PATH, "*.txt")))
+        
+        # Buscar en emitidas
+        if os.path.exists(EMITIDAS_PATH):
+            archivos_txt.extend(glob.glob(os.path.join(EMITIDAS_PATH, "*.txt")))
+        
+        if not archivos_txt:
+            print(f" No se encontraron archivos TXT en {RECIBIDAS_PATH} ni {EMITIDAS_PATH}")
             return None
+        
+        # Tomar el archivo ms reciente
+        ruta_archivo = max(archivos_txt, key=os.path.getctime)
+        print(f" Archivo encontrado: {os.path.basename(ruta_archivo)}")
+        print(f" Ubicacin: {ruta_archivo}")
     
     try:
         # Leer el archivo TXT
@@ -159,15 +164,34 @@ def generar_excel():
     # Debug: mostrar informacin de bsqueda
     print(f"\n Buscando archivos...")
     print(f"   Carpeta recibidas: {RECIBIDAS_PATH}")
-    print(f"   Existe carpeta: {os.path.exists(RECIBIDAS_PATH)}")
+    print(f"   Existe: {os.path.exists(RECIBIDAS_PATH)}")
+    print(f"   Carpeta emitidas: {EMITIDAS_PATH}")
+    print(f"   Existe: {os.path.exists(EMITIDAS_PATH)}")
+    
+    # Buscar en ambas carpetas
+    archivos_txt_total = []
     
     if os.path.exists(RECIBIDAS_PATH):
         archivos = os.listdir(RECIBIDAS_PATH)
-        archivos_txt = [f for f in archivos if f.endswith('.txt')]
-        print(f"   Archivos en carpeta: {len(archivos)}")
-        print(f"   Archivos TXT: {len(archivos_txt)}")
-        if archivos_txt:
-            print(f"   TXT encontrados: {archivos_txt}")
+        archivos_txt_rec = [f for f in archivos if f.endswith('.txt')]
+        print(f"\n   RECIBIDAS:")
+        print(f"   - Archivos: {len(archivos)}")
+        print(f"   - TXT: {len(archivos_txt_rec)}")
+        if archivos_txt_rec:
+            print(f"   - Lista: {archivos_txt_rec}")
+        archivos_txt_total.extend([os.path.join(RECIBIDAS_PATH, f) for f in archivos_txt_rec])
+    
+    if os.path.exists(EMITIDAS_PATH):
+        archivos = os.listdir(EMITIDAS_PATH)
+        archivos_txt_emi = [f for f in archivos if f.endswith('.txt')]
+        print(f"\n   EMITIDAS:")
+        print(f"   - Archivos: {len(archivos)}")
+        print(f"   - TXT: {len(archivos_txt_emi)}")
+        if archivos_txt_emi:
+            print(f"   - Lista: {archivos_txt_emi}")
+        archivos_txt_total.extend([os.path.join(EMITIDAS_PATH, f) for f in archivos_txt_emi])
+    
+    print(f"\n   Total TXT encontrados: {len(archivos_txt_total)}")
     
     # Intentar primero con el reporte TXT
     print("\n Intentando generar desde TXT...")

@@ -204,7 +204,7 @@ def ir_a_comprobantes(driver, tipo):
     else:
         submenu_texto = "Comprobantes electrónicos emitidos"
     
-    print("Abriendo menú hamburguesa...")
+    print("Abriendo menu hamburguesa...")
     script_menu = """
     const menuBtn = document.getElementById('sri-menu');
     if (menuBtn) {
@@ -297,11 +297,364 @@ def ir_a_comprobantes(driver, tipo):
     encontrado = driver.execute_script(script)
     
     if not encontrado:
-        raise Exception(f"No se encontró opción: {submenu_texto}")
+        raise Exception(f"No se encontro opcion: {submenu_texto}")
     
-    print(f"✅ Navegando a {submenu_texto}")
+    print(f"Navegando a {submenu_texto}")
     time.sleep(5)
     guardar_html(driver, f"menu_{tipo.lower()}")
+
+
+def diagnosticar_menu(driver):
+    """
+    Función de diagnóstico para entender la estructura real del menú SRI
+    """
+    print("\n🔍 DIAGNÓSTICO DEL MENÚ")
+    print("="*60)
+    
+    script = """
+    const resultado = {
+        botonMenu: null,
+        cssmenu: null,
+        menuNuevo: null,
+        itemsPrincipales: [],
+        elementosFacturacion: []
+    };
+    
+    // Buscar botón de menú hamburguesa
+    const menuIcon = document.querySelector('.sri-menu-icon-menu-hamburguesa');
+    const menuLink = document.querySelector('a[onclick*="mostrarOcultaSidebar"]');
+    
+    if (menuIcon) {
+        resultado.botonMenu = {
+            tipo: 'icono',
+            className: menuIcon.className,
+            tieneMenuLink: !!menuLink
+        };
+    } else if (menuLink) {
+        resultado.botonMenu = {
+            tipo: 'enlace',
+            onclick: menuLink.getAttribute('onclick')
+        };
+    }
+    
+    // Buscar #cssmenu (menú principal)
+    const cssmenu = document.querySelector('#cssmenu');
+    resultado.cssmenu = {
+        existe: !!cssmenu,
+        htmlLength: cssmenu ? cssmenu.innerHTML.length : 0
+    };
+    
+    // Buscar #menuNuevo
+    const menuNuevo = document.querySelector('#menuNuevo');
+    resultado.menuNuevo = {
+        existe: !!menuNuevo,
+        clases: menuNuevo ? menuNuevo.className : null,
+        visible: menuNuevo ? menuNuevo.offsetParent !== null : false
+    };
+    
+    // Si existe cssmenu, obtener todos los items principales
+    if (cssmenu) {
+        const items = cssmenu.querySelectorAll(':scope > ul > li');
+        resultado.itemsPrincipales = Array.from(items).map(li => {
+            const enlace = li.querySelector('a');
+            return {
+                texto: (li.innerText || '').trim().substring(0, 80),
+                tieneSubmenu: li.classList.contains('has-sub'),
+                idEnlace: enlace ? enlace.id : null,
+                onclick: enlace ? (enlace.getAttribute('onclick') || '').substring(0, 100) : null
+            };
+        });
+    }
+    
+    // Buscar elementos relacionados con Facturación electrónica
+    const todosElementos = document.querySelectorAll('#cssmenu *');
+    for (let el of todosElementos) {
+        const texto = (el.innerText || el.textContent || '').trim().toUpperCase();
+        if ((texto.includes('FACTURACIÓN') || texto.includes('FACTURACION')) && 
+            (texto.includes('ELECTRÓNICA') || texto.includes('ELECTRONICA'))) {
+            resultado.elementosFacturacion.push({
+                texto: el.innerText.trim().substring(0, 60),
+                tagName: el.tagName,
+                visible: el.offsetParent !== null,
+                parentText: el.parentElement ? el.parentElement.innerText.trim().substring(0, 40) : ''
+            });
+        }
+    }
+    
+    return resultado;
+    """
+    
+    resultado = driver.execute_script(script)
+    
+    print(f"Botón de menú: {resultado.get('botonMenu')}")
+    print(f"\nCSSMENU: {resultado.get('cssmenu')}")
+    print(f"MenuNuevo: {resultado.get('menuNuevo')}")
+    print(f"\nItems principales del menú ({len(resultado.get('itemsPrincipales', []))}):")
+    for item in resultado.get('itemsPrincipales', []):
+        print(f"  - {item.get('texto')} {'[-submenu]' if item.get('tieneSubmenu') else ''}")
+        if item.get('idEnlace'):
+            print(f"    ID: {item.get('idEnlace')}")
+    
+    print(f"\nElementos 'Facturación electrónica' ({len(resultado.get('elementosFacturacion', []))}):")
+    for elem in resultado.get('elementosFacturacion', []):
+        print(f"  - {elem.get('texto')} [{elem.get('tagName')}] {'(visible)' if elem.get('visible') else '(oculto)'}")
+    
+    print("="*60)
+
+
+def ir_a_emitidas_nuevo_menu(driver):
+    """
+    Navega a Comprobantes electrónicos emitidos siguiendo el nuevo flujo:
+    Facturación electrónica -> Producción -> Consultas -> Comprobantes electrónicos emitidos
+    Basado en la estructura real del HTML del SRI.
+    """
+    print("\n" + "="*60)
+    print("NAVEGANDO A EMITIDAS (NUEVO MENU)")
+    print("="*60)
+    
+    wait = WebDriverWait(driver, 10)
+    
+    # 1. Abrir el menú hamburguesa
+    print("\n1. Abriendo menu hamburguesa...")
+    script_abrir_menu = """
+    // Usar la función JavaScript del SRI para abrir el menú
+    if (typeof mostrarOcultaSidebar === 'function') {
+        mostrarOcultaSidebar();
+        return {encontrado: true, metodo: 'funcion_js'};
+    }
+    
+    // Alternativa: buscar el botón de menú
+    const menuIcon = document.querySelector('.sri-menu-icon-menu-hamburguesa');
+    if (menuIcon) {
+        menuIcon.click();
+        return {encontrado: true, metodo: 'icono'};
+    }
+    
+    const menuLink = document.querySelector('.top-icono-menu');
+    if (menuLink) {
+        menuLink.click();
+        return {encontrado: true, metodo: 'top_icono'};
+    }
+    
+    return {encontrado: false};
+    """
+    
+    resultado = driver.execute_script(script_abrir_menu)
+    if resultado.get('encontrado'):
+        print(f"   ✅ Menú abierto ({resultado.get('metodo')})")
+        time.sleep(4)  # Esperar a que el menú se cargue completamente
+    else:
+        print("   ❌ No se encontró botón de menú")
+        raise Exception("No se pudo abrir el menú")
+    
+    # 2. Esperar a que el menú se cargue dinámicamente con AJAX
+    print("\n2. Esperando que el menú se cargue completamente...")
+    time.sleep(5)  # Esperar carga del menú via AJAX
+    
+    # Guardar HTML para debugging
+    guardar_html(driver, "debug_menu_abierto")
+    
+    # 3. Hacer clic en "Facturación electrónica" expandiendo el submenú
+    print("\n3. Expandiendo 'Facturación electrónica'...")
+    script_facturacion = """
+    const cssmenu = document.querySelector('#cssmenu');
+    if (!cssmenu) {
+        return {encontrado: false, error: 'No se encontró #cssmenu'};
+    }
+    
+    // Buscar el enlace principal de Facturación Electrónica
+    const items = cssmenu.querySelectorAll('li.has-sub > a');
+    
+    for (let item of items) {
+        const texto = (item.innerText || item.textContent || '').trim().toUpperCase();
+        
+        if (texto.includes('FACTURACIÓN') && texto.includes('ELECTRÓNICA')) {
+            // Verificar si ya está expandido
+            const parentLi = item.parentElement;
+            if (!parentLi.classList.contains('open')) {
+                // Hacer clic para expandir
+                item.click();
+                return {encontrado: true, texto: texto, accion: 'expandido'};
+            } else {
+                return {encontrado: true, texto: texto, accion: 'ya_expandido'};
+            }
+        }
+    }
+    
+    return {encontrado: false, error: 'No se encontró Facturación electrónica'};
+    """
+    
+    resultado = driver.execute_script(script_facturacion)
+    if resultado.get('encontrado'):
+        print(f"   ✅ {resultado.get('texto')} ({resultado.get('accion')})")
+        time.sleep(3)
+    else:
+        print(f"   ❌ {resultado.get('error')}")
+    
+    guardar_html(driver, "debug_despues_facturacion")
+    
+    # 4. Hacer clic en "Producción" expandiendo el submenú
+    print("\n4. Expandiendo 'Producción'...")
+    script_produccion = """
+    const cssmenu = document.querySelector('#cssmenu');
+    if (!cssmenu) {
+        return {encontrado: false, error: 'No se encontró #cssmenu'};
+    }
+    
+    // Buscar dentro de Facturación Electrónica
+    const facturacionLi = Array.from(cssmenu.querySelectorAll('li.has-sub')).find(li => {
+        const texto = (li.innerText || li.textContent || '').toUpperCase();
+        return texto.includes('FACTURACIÓN') && texto.includes('ELECTRÓNICA');
+    });
+    
+    if (!facturacionLi) {
+        return {encontrado: false, error: 'No se encontró Facturación Electrónica expandida'};
+    }
+    
+    // Buscar Producción dentro del submenú de Facturación Electrónica
+    const submenus = facturacionLi.querySelectorAll('ul li');
+    
+    for (let item of submenus) {
+        const enlace = item.querySelector('a');
+        if (!enlace) continue;
+        
+        const texto = (enlace.innerText || enlace.textContent || '').trim();
+        if (texto.toUpperCase() === 'PRODUCCIÓN' || texto.toUpperCase() === 'PRODUCCION') {
+            // Hacer clic para expandir si tiene submenú
+            if (item.classList.contains('has-sub') && !item.classList.contains('open')) {
+                enlace.click();
+                return {encontrado: true, texto: texto, accion: 'expandido'};
+            }
+            return {encontrado: true, texto: texto, accion: 'ya_expandido'};
+        }
+    }
+    
+    return {encontrado: false, error: 'No se encontró Producción'};
+    """
+    
+    resultado = driver.execute_script(script_produccion)
+    if resultado.get('encontrado'):
+        print(f"   ✅ {resultado.get('texto')} ({resultado.get('accion')})")
+        time.sleep(3)
+    else:
+        print(f"   ❌ {resultado.get('error')}")
+    
+    guardar_html(driver, "debug_despues_produccion")
+    
+    # 5. Hacer clic en "Consultas" para navegar a la página de consultas
+    print("\n5. Navegando a 'Consultas'...")
+    script_consultas = """
+    const cssmenu = document.querySelector('#cssmenu');
+    if (!cssmenu) {
+        return {encontrado: false, error: 'No se encontró #cssmenu'};
+    }
+    
+    // Buscar el enlace de Consultas (que navega a una página, no expande)
+    const enlaces = cssmenu.querySelectorAll('a');
+    
+    for (let enlace of enlaces) {
+        const texto = (enlace.innerText || enlace.textContent || '').trim();
+        if (texto.toUpperCase() === 'CONSULTAS') {
+            // Hacer clic en el enlace
+            enlace.click();
+            return {encontrado: true, texto: texto, href: enlace.href || 'sin-href'};
+        }
+    }
+    
+    // Si no se encuentra exacto, buscar parcial
+    for (let enlace of enlaces) {
+        const texto = (enlace.innerText || enlace.textContent || '').trim().toUpperCase();
+        if (texto === 'CONSULTAS') {
+            enlace.click();
+            return {encontrado: true, texto: 'CONSULTAS', metodo: 'parcial'};
+        }
+    }
+    
+    return {encontrado: false, error: 'No se encontró el enlace de Consultas'};
+    """
+    
+    resultado = driver.execute_script(script_consultas)
+    if resultado.get('encontrado'):
+        print(f"   ✅ Navegando a: {resultado.get('texto')}")
+        if resultado.get('href'):
+            print(f"      URL: {resultado.get('href')}")
+    else:
+        print(f"   ❌ {resultado.get('error')}")
+        raise Exception("No se pudo navegar a Consultas")
+    
+    # 6. Esperar a que cargue la página de consultas
+    print("\n6. Esperando que cargue la página de Consultas...")
+    time.sleep(8)  # Esperar suficiente tiempo para que cargue la página
+    guardar_html(driver, "debug_pagina_consultas")
+    
+    # 7. Buscar y hacer clic en "Comprobantes electrónicos emitidos" en la página cargada
+    print("\n7. Buscando 'Comprobantes electrónicos emitidos' en la página...")
+    
+    try:
+        # Buscar el enlace específico
+        enlace_emitidos = driver.execute_script("""
+            const enlaces = document.querySelectorAll('a');
+            for (let enlace of enlaces) {
+                const texto = (enlace.innerText || enlace.textContent || '').trim();
+                if (texto.toUpperCase().includes('COMPROBANTES ELECTRÓNICOS EMITIDOS') || 
+                    texto.toUpperCase().includes('COMPROBANTES ELECTRONICOS EMITIDOS')) {
+                    return {
+                        encontrado: true,
+                        texto: texto,
+                        onclick: enlace.getAttribute('onclick')
+                    };
+                }
+            }
+            return {encontrado: false};
+        """)
+        
+        if enlace_emitidos.get('encontrado'):
+            print(f"   ✅ Encontrado: {enlace_emitidos.get('texto')}")
+            
+            # Si tiene onclick con mojarra, ejecutarlo
+            onclick = enlace_emitidos.get('onclick', '')
+            if onclick and 'mojarra.jsfcljs' in onclick:
+                print("   Ejecutando onclick JSF...")
+                driver.execute_script(onclick)
+            else:
+                # Hacer clic normal
+                driver.execute_script("""
+                    const enlaces = document.querySelectorAll('a');
+                    for (let enlace of enlaces) {
+                        const texto = (enlace.innerText || '').trim();
+                        if (texto.toUpperCase().includes('COMPROBANTES ELECTRÓNICOS EMITIDOS') || 
+                            texto.toUpperCase().includes('COMPROBANTES ELECTRONICOS EMITIDOS')) {
+                            enlace.click();
+                            break;
+                        }
+                    }
+                """)
+            
+            print("   ⏳ Esperando a que cargue la página de emitidos...")
+            time.sleep(6)
+            guardar_html(driver, "menu_emitidas_nuevo")
+            print("   ✅ Navegación completada")
+        else:
+            # Buscar coincidencias para debug
+            coincidencias = driver.execute_script("""
+                const enlaces = document.querySelectorAll('a');
+                let coincidencias = [];
+                for (let el of enlaces) {
+                    const texto = (el.innerText || '').trim();
+                    if (texto.toUpperCase().includes('EMITIDOS') && texto.length < 60) {
+                        coincidencias.push(texto);
+                    }
+                }
+                return coincidencias.slice(0, 10);
+            """)
+            print(f"   ❌ No se encontró 'Comprobantes electrónicos emitidos'")
+            if coincidencias:
+                print(f"   Opciones con 'EMITIDOS': {coincidencias}")
+            raise Exception("No se pudo encontrar el enlace")
+            
+    except Exception as e:
+        print(f"   ❌ Error al navegar: {str(e)}")
+        raise Exception("No se pudo navegar a Comprobantes electrónicos emitidos")
 
 
 def filtrar_fechas(driver, desde, hasta, ruc=None):

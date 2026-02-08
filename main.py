@@ -13,6 +13,8 @@ from config import (
 from login_sri import login
 from descargar_facturas import (
     ir_a_comprobantes,
+    ir_a_emitidas_nuevo_menu,
+    diagnosticar_menu,
     filtrar_fechas,
     descargar_documentos
 )
@@ -23,7 +25,7 @@ from guardar_html import guardar_html
 os.makedirs(RECIBIDAS_PATH, exist_ok=True)
 os.makedirs(EMITIDAS_PATH, exist_ok=True)
 
-# Configurar opciones de Chrome para descargas automáticas
+# Configurar opciones de Chrome para descargas automticas
 options = Options()
 
 # Usar rutas absolutas para los directorios de descarga
@@ -93,16 +95,27 @@ try:
     
     if resultado and (resultado.get('xml', 0) > 0 or resultado.get('pdf', 0) > 0):
         descarga_exitosa = True
-        print(f"✅ Descarga de recibidas completada")
+        print(f" Descarga de recibidas completada")
 
     # ========= FACTURAS EMITIDAS (OPCIONAL) =========
     try:
+        print("\n" + "="*60)
+        print("PREPARANDO NAVEGACION A COMPROBANTES EMITIDOS")
+        print("="*60)
+        
+        # Esperar un momento para asegurar que la página esté estable
+        print("Esperando 3 segundos para estabilizar la página...")
+        time.sleep(3)
+        
+        # Ejecutar diagnóstico del menú
+        diagnosticar_menu(driver)
+        
         driver.execute_cdp_cmd(
             "Page.setDownloadBehavior",
             {"behavior": "allow", "downloadPath": EMITIDAS_PATH}
         )
 
-        ir_a_comprobantes(driver, "EMITIDAS")
+        ir_a_emitidas_nuevo_menu(driver)
         time.sleep(5)
         guardar_html(driver, "04_emitidas_menu")
 
@@ -115,29 +128,29 @@ try:
         
         if resultado and (resultado.get('xml', 0) > 0 or resultado.get('pdf', 0) > 0):
             descarga_exitosa = True
-            print(f"✅ Descarga de emitidas completada")
+            print(f" Descarga de emitidas completada")
             
     except Exception as e:
-        print(f"⚠️ No se pudieron descargar emitidas: {e}")
-        print("   Continuando con generación de Excel...")
+        print(f" No se pudieron descargar emitidas: {e}")
+        print("   Continuando con generacin de Excel...")
 
 except Exception as e:
-    print(f"\n❌ Error durante la ejecución: {e}")
+    print(f"\n Error durante la ejecucin: {e}")
     import traceback
     traceback.print_exc()
 
 finally:
     driver.quit()
 
-# Genera el Excel automáticamente al final (siempre, incluso si hubo errores)
+# Genera el Excel automticamente al final (siempre, incluso si hubo errores)
 print("\n" + "="*60)
 print("PROCESO FINALIZADO - GENERANDO EXCEL")
 print("="*60)
 
 try:
     generar_excel()
-    print("\n✅ PROCESO COMPLETADO")
+    print("\n PROCESO COMPLETADO")
 except Exception as e:
-    print(f"\n❌ Error al generar Excel: {e}")
+    print(f"\n Error al generar Excel: {e}")
     import traceback
     traceback.print_exc()
