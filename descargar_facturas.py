@@ -188,24 +188,6 @@ def descargar_documentos(driver, descargar_xml=True, descargar_pdf=True, directo
         print("💡 Sugerencia: Intenta hacer clic manualmente en el botón 'Descargar reporte'")
         return {'xml': 0, 'pdf': 0}
 
-
-def cambiar_a_iframe_menu(driver):
-    """Cambia al iframe del menú si es necesario"""
-    wait = WebDriverWait(driver, 20)
-    iframes = driver.find_elements(By.TAG_NAME, "iframe")
-    
-    for iframe in iframes:
-        driver.switch_to.frame(iframe)
-        try:
-            driver.find_element(By.XPATH, "//span[contains(text(),'Facturación')]")
-            print("✅ IFRAME correcto encontrado")
-            return
-        except:
-            driver.switch_to.default_content()
-    
-    raise Exception("❌ No se encontró iframe del menú")
-
-
 def ir_a_comprobantes(driver, tipo):
     """Navega a comprobantes recibidos o emitidos"""
     if tipo == "RECIBIDAS":
@@ -1059,8 +1041,3 @@ def filtrar_fechas(driver, desde, hasta, ruc=None, directorio_descarga=None):
         import traceback
         traceback.print_exc()
 
-
-def descargar_xmls(driver):
-    """Función legacy - ahora usa descargar_documentos"""
-    resultado = descargar_documentos(driver, descargar_xml=True, descargar_pdf=False)
-    return resultado['xml']
