@@ -657,13 +657,202 @@ def ir_a_emitidas_nuevo_menu(driver):
         raise Exception("No se pudo navegar a Comprobantes electrónicos emitidos")
 
 
+def detectar_tipo_pagina(driver):
+    """Detecta si estamos en la página de recibidos o emitidos"""
+    try:
+        titulo = driver.execute_script("""
+            const titulo = document.querySelector('#tituloPagina, .sri-textoTitulo');
+            return titulo ? titulo.innerText : '';
+        """)
+        
+        if 'emitidos' in titulo.lower():
+            return 'emitidos'
+        elif 'recibidos' in titulo.lower():
+            return 'recibidos'
+        else:
+            # Verificar por URL
+            url = driver.current_url
+            if 'emitidos' in url.lower():
+                return 'emitidos'
+            elif 'recibidos' in url.lower():
+                return 'recibidos'
+            return 'desconocido'
+    except:
+        return 'desconocido'
+
+
+def presionar_boton_consultar(driver):
+    """Presiona el botón de consultar y maneja el reCAPTCHA"""
+    try:
+        time.sleep(2)
+        print("⏳ Esperando a que el reCAPTCHA esté listo...")
+        time.sleep(3)
+        
+        script_boton = """
+        const botones = document.querySelectorAll('button, input[type="submit"], input[type="button"], a');
+        for (let btn of botones) {
+            const texto = (btn.textContent || btn.value || '').toLowerCase();
+            if (texto.trim() === 'consultar' || 
+                texto.includes('consultar') || 
+                texto.includes('buscar') ||
+                texto.includes('filtrar') ||
+                btn.className.toLowerCase().includes('consultar') ||
+                btn.id.toLowerCase().includes('consultar')) {
+                if (btn.offsetParent !== null && !btn.disabled) {
+                    console.log('Botón encontrado:', btn);
+                    btn.click();
+                    return true;
+                }
+            }
+        }
+        
+        const btnConsultar = document.querySelector('[id*="consultar"], [id*="Consultar"], .ui-button, .btn-consultar');
+        if (btnConsultar && btnConsultar.offsetParent !== null && !btnConsultar.disabled) {
+            btnConsultar.click();
+            return true;
+        }
+        
+        return false;
+        """
+        
+        boton_encontrado = driver.execute_script(script_boton)
+        
+        if boton_encontrado:
+            print("✅ Botón de consulta presionado")
+        else:
+            print("⚠️ No se encontró botón de consulta")
+        
+        time.sleep(5)
+        
+        script_recaptcha = """
+        const recaptcha = document.querySelector('.g-recaptcha, [id*="recaptcha"], iframe[title*="reCAPTCHA"]');
+        if (recaptcha) {
+            console.log('reCAPTCHA detectado');
+            return true;
+        }
+        return false;
+        """
+        
+        recaptcha_detectado = driver.execute_script(script_recaptcha)
+        if recaptcha_detectado:
+            print("🔐 reCAPTCHA detectado - Esperando 10 segundos para resolución manual...")
+            time.sleep(10)
+        
+        return boton_encontrado
+        
+    except Exception as e:
+        print(f"❌ Error al presionar botón: {str(e)}")
+        return False
+
+
+def filtrar_fechas_emitidos(driver, desde, hasta):
+    """Filtra comprobantes emitidos por fecha"""
+    print(f"\nFiltrando EMITIDOS desde: {desde} hasta: {hasta}")
+    
+    try:
+        time.sleep(3)
+        
+        desde_partes = desde.split('/')
+        desde_anio = desde_partes[2]
+        desde_mes = desde_partes[1].zfill(2)  # Asegurar 2 dígitos
+        desde_dia = desde_partes[0].zfill(2)  # Asegurar 2 dígitos
+        
+        fecha_formateada = f"{desde_dia}/{desde_mes}/{desde_anio}"
+        print(f"Configurando fecha de emisión: {fecha_formateada}")
+        
+        # Script para llenar el campo de fecha en emitidos
+        script_fecha = f"""
+        const resultado = {{}};
+        
+        // Buscar específicamente el input de fecha de emisión
+        const inputFecha = document.getElementById('frmPrincipal:calendarFechaDesde_input');
+        
+        if (inputFecha) {{
+            inputFecha.value = '{fecha_formateada}';
+            inputFecha.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            inputFecha.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            resultado.fecha = true;
+            resultado.metodo = 'id_directo';
+            console.log('Fecha configurada en campo:', inputFecha.value);
+        }} else {{
+            // Si no se encuentra por ID, buscar por atributo name
+            const inputPorName = document.querySelector('input[name*="calendarFechaDesde"]');
+            if (inputPorName) {{
+                inputPorName.value = '{fecha_formateada}';
+                inputPorName.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                inputPorName.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                resultado.fecha = true;
+                resultado.metodo = 'name';
+            }} else {{
+                // Buscar por label cercano
+                const labels = document.querySelectorAll('label');
+                for (let label of labels) {{
+                    const labelText = (label.innerText || label.textContent || '').toLowerCase();
+                    if (labelText.includes('fecha emisión') || labelText.includes('fecha emision')) {{
+                        const td = label.closest('td');
+                        if (td) {{
+                            const siguienteTd = td.nextElementSibling;
+                            if (siguienteTd) {{
+                                const input = siguienteTd.querySelector('input[type="text"]');
+                                if (input) {{
+                                    input.value = '{fecha_formateada}';
+                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    resultado.fecha = true;
+                                    resultado.metodo = 'label';
+                                    break;
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+        }}
+        
+        return resultado;
+        """
+        
+        resultado = driver.execute_script(script_fecha)
+        print(f"Campos configurados: {resultado}")
+        
+        if resultado.get('fecha'):
+            print(f"✅ Fecha configurada correctamente ({resultado.get('metodo')})")
+        else:
+            print("⚠️ No se pudo configurar la fecha")
+        
+        time.sleep(2)
+        
+        # Presionar botón de consultar
+        presionar_boton_consultar(driver)
+        
+        # Después de filtrar, descargar el reporte
+        print("\n📥 Descargando reporte de emitidos...")
+        time.sleep(3)  # Esperar a que carguen los resultados
+        descargar_reporte_txt(driver)
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error al filtrar emitidos: {str(e)}")
+        return False
+
+
 def filtrar_fechas(driver, desde, hasta, ruc=None):
     """Filtra facturas por rango de fechas y descarga el reporte"""
     wait = WebDriverWait(driver, 20)
     
+    # Detectar tipo de página
+    tipo_pagina = detectar_tipo_pagina(driver)
+    print(f"\nTipo de página detectada: {tipo_pagina}")
+    
+    # Si es emitidos, usar función específica
+    if tipo_pagina == 'emitidos':
+        return filtrar_fechas_emitidos(driver, desde, hasta)
+    
+    # Si es recibidos, continuar con el código existente
     try:
         time.sleep(3)
-        print(f"Filtrando desde: {desde} hasta: {hasta}")
+        print(f"Filtrando RECIBIDOS desde: {desde} hasta: {hasta}")
         
         desde_partes = desde.split('/')
         desde_anio = desde_partes[2]
@@ -784,59 +973,8 @@ def filtrar_fechas(driver, desde, hasta, ruc=None):
         resultado = driver.execute_script(script_formulario)
         print(f"Campos configurados: {resultado}")
         
-        time.sleep(2)
-        print("⏳ Esperando a que el reCAPTCHA esté listo...")
-        time.sleep(3)
-        
-        script_boton = """
-        const botones = document.querySelectorAll('button, input[type="submit"], input[type="button"], a');
-        for (let btn of botones) {
-            const texto = (btn.textContent || btn.value || '').toLowerCase();
-            if (texto.trim() === 'consultar' || 
-                texto.includes('consultar') || 
-                texto.includes('buscar') ||
-                texto.includes('filtrar') ||
-                btn.className.toLowerCase().includes('consultar') ||
-                btn.id.toLowerCase().includes('consultar')) {
-                if (btn.offsetParent !== null && !btn.disabled) {
-                    console.log('Botón encontrado:', btn);
-                    btn.click();
-                    return true;
-                }
-            }
-        }
-        
-        const btnConsultar = document.querySelector('[id*="consultar"], [id*="Consultar"], .ui-button, .btn-consultar');
-        if (btnConsultar && btnConsultar.offsetParent !== null && !btnConsultar.disabled) {
-            btnConsultar.click();
-            return true;
-        }
-        
-        return false;
-        """
-        
-        boton_encontrado = driver.execute_script(script_boton)
-        
-        if boton_encontrado:
-            print("✅ Botón de consulta presionado")
-        else:
-            print("⚠️ No se encontró botón de consulta")
-        
-        time.sleep(5)
-        
-        script_recaptcha = """
-        const recaptcha = document.querySelector('.g-recaptcha, [id*="recaptcha"], iframe[title*="reCAPTCHA"]');
-        if (recaptcha) {
-            console.log('reCAPTCHA detectado');
-            return true;
-        }
-        return false;
-        """
-        
-        recaptcha_detectado = driver.execute_script(script_recaptcha)
-        if recaptcha_detectado:
-            print("🔐 reCAPTCHA detectado - Esperando 10 segundos para resolución manual...")
-            time.sleep(10)
+        # Presionar botón de consultar
+        presionar_boton_consultar(driver)
         
         # Después de filtrar, descargar el reporte
         print("\n📥 Descargando reporte...")
