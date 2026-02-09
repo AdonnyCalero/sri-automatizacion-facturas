@@ -21,6 +21,15 @@ def descargar_reporte_txt_requests(driver, directorio_descarga=None):
     try:
         print("   Descargando reporte con requests...")
         
+        # Verificar que estamos en la página correcta
+        url_actual = driver.current_url
+        print(f"   URL actual: {url_actual}")
+        
+        if 'menu.jsf' in url_actual and 'recuperarComprobantes' not in url_actual:
+            print("   ⚠️ No estamos en la página de resultados. Intentando navegar desde el menú...")
+            # Si estamos en el menú, no podemos descargar directamente
+            return False
+        
         # Obtener cookies del driver
         cookies = driver.get_cookies()
         session = requests.Session()
@@ -745,9 +754,13 @@ def presionar_boton_consultar(driver):
         return False
 
 
-def filtrar_fechas_emitidos(driver, desde, hasta):
+def filtrar_fechas_emitidos(driver, desde, hasta, directorio_descarga=None):
     """Filtra comprobantes emitidos por fecha"""
     print(f"\nFiltrando EMITIDOS desde: {desde} hasta: {hasta}")
+    
+    # Usar directorio por defecto si no se especifica
+    if not directorio_descarga:
+        directorio_descarga = "facturas_xml/emitidas"
     
     try:
         time.sleep(3)
@@ -760,52 +773,56 @@ def filtrar_fechas_emitidos(driver, desde, hasta):
         fecha_formateada = f"{desde_dia}/{desde_mes}/{desde_anio}"
         print(f"Configurando fecha de emisión: {fecha_formateada}")
         
-        # Script para llenar el campo de fecha en emitidos
+        # Script para llenar el campo de fecha y activar el formulario en emitidos
         script_fecha = f"""
         const resultado = {{}};
         
-        // Buscar específicamente el input de fecha de emisión
+        // 1. Verificar que el radio button de RUC esté seleccionado
+        const radioRuc = document.getElementById('frmPrincipal:opciones:0');
+        if (radioRuc && !radioRuc.checked) {{
+            radioRuc.click();
+            resultado.radioRuc = true;
+        }}
+        
+        // 2. "Tocar" el campo de RUC para activar el formulario
+        const inputRuc = document.getElementById('frmPrincipal:txtParametro');
+        if (inputRuc) {{
+            const valorOriginal = inputRuc.value;
+            inputRuc.value = valorOriginal + ' ';
+            inputRuc.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            setTimeout(() => {{
+                inputRuc.value = valorOriginal;
+                inputRuc.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                inputRuc.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            }}, 100);
+            resultado.ruc = true;
+        }}
+        
+        // 3. Configurar fecha usando jQuery UI Datepicker
         const inputFecha = document.getElementById('frmPrincipal:calendarFechaDesde_input');
         
         if (inputFecha) {{
-            inputFecha.value = '{fecha_formateada}';
-            inputFecha.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            inputFecha.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            resultado.fecha = true;
-            resultado.metodo = 'id_directo';
-            console.log('Fecha configurada en campo:', inputFecha.value);
-        }} else {{
-            // Si no se encuentra por ID, buscar por atributo name
-            const inputPorName = document.querySelector('input[name*="calendarFechaDesde"]');
-            if (inputPorName) {{
-                inputPorName.value = '{fecha_formateada}';
-                inputPorName.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                inputPorName.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            // Usar jQuery para configurar la fecha del datepicker
+            if (typeof jQuery !== 'undefined' && jQuery(inputFecha).datepicker) {{
+                jQuery(inputFecha).datepicker('setDate', '{fecha_formateada}');
                 resultado.fecha = true;
-                resultado.metodo = 'name';
+                resultado.metodo = 'datepicker';
+                console.log('Fecha configurada con datepicker:', inputFecha.value);
             }} else {{
-                // Buscar por label cercano
-                const labels = document.querySelectorAll('label');
-                for (let label of labels) {{
-                    const labelText = (label.innerText || label.textContent || '').toLowerCase();
-                    if (labelText.includes('fecha emisión') || labelText.includes('fecha emision')) {{
-                        const td = label.closest('td');
-                        if (td) {{
-                            const siguienteTd = td.nextElementSibling;
-                            if (siguienteTd) {{
-                                const input = siguienteTd.querySelector('input[type="text"]');
-                                if (input) {{
-                                    input.value = '{fecha_formateada}';
-                                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    resultado.fecha = true;
-                                    resultado.metodo = 'label';
-                                    break;
-                                }}
-                            }}
-                        }}
-                    }}
+                // Fallback: cambiar valor directamente
+                inputFecha.value = '{fecha_formateada}';
+                inputFecha.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                inputFecha.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                
+                // Intentar disparar evento de PrimeFaces
+                if (typeof PrimeFaces !== 'undefined') {{
+                    PrimeFaces.csp.trigger(inputFecha, 'input');
+                    PrimeFaces.csp.trigger(inputFecha, 'change');
                 }}
+                
+                resultado.fecha = true;
+                resultado.metodo = 'directo_con_primefaces';
+                console.log('Fecha configurada directamente:', inputFecha.value);
             }}
         }}
         
@@ -820,15 +837,72 @@ def filtrar_fechas_emitidos(driver, desde, hasta):
         else:
             print("⚠️ No se pudo configurar la fecha")
         
-        time.sleep(2)
+        time.sleep(5)  # Esperar más tiempo para que el formulario se actualice completamente
         
-        # Presionar botón de consultar
-        presionar_boton_consultar(driver)
+        # Verificar que la fecha se haya configurado correctamente
+        fecha_actual = driver.execute_script("""
+            const input = document.getElementById('frmPrincipal:calendarFechaDesde_input');
+            return input ? input.value : 'no encontrado';
+        """)
+        print(f"   Fecha actual en el campo: {fecha_actual}")
         
-        # Después de filtrar, descargar el reporte
-        print("\n📥 Descargando reporte de emitidos...")
-        time.sleep(3)  # Esperar a que carguen los resultados
-        descargar_reporte_txt(driver)
+        # Presionar botón de consultar para EMITIDOS
+        print("\n🖱️ Presionando botón Consultar para EMITIDOS...")
+        
+        # Usar JavaScript para hacer clic (más confiable para PrimeFaces)
+        try:
+            resultado_click = driver.execute_script("""
+                const btn = document.getElementById('frmPrincipal:btnConsultar');
+                if (btn) {
+                    // Simular el evento de clic completo
+                    const clickEvent = new MouseEvent('click', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window
+                    });
+                    btn.dispatchEvent(clickEvent);
+                    return {exito: true, metodo: 'js_event'};
+                }
+                return {exito: false};
+            """)
+            
+            if resultado_click.get('exito'):
+                print(f"   ✅ Botón presionado ({resultado_click.get('metodo')})")
+            else:
+                # Fallback a Selenium
+                btn_consultar = driver.find_element(By.ID, "frmPrincipal:btnConsultar")
+                btn_consultar.click()
+                print("   ✅ Botón presionado (Selenium)")
+        except Exception as e:
+            print(f"   ⚠️ Error: {e}")
+            presionar_boton_consultar(driver)
+        
+        # Esperar más tiempo para la respuesta AJAX de PrimeFaces
+        print("\n⏳ Esperando respuesta del servidor (10 segundos)...")
+        time.sleep(10)
+        
+        # Verificar URL después de consultar
+        url_despues = driver.current_url
+        print(f"\n📍 URL después de consultar: {url_despues}")
+        
+        # Si no estamos en la página de resultados, intentar nuevamente
+        if 'menu.jsf' in url_despues:
+            print("\n⚠️ Redirigido al menú. El formulario no se procesó correctamente.")
+            print("   Esto puede deberse a:")
+            print("   - Validación del formulario")
+            print("   - Protección anti-bot del sitio")
+            print("   - Timeout de sesión")
+            print("\n💡 RECOMENDACIÓN: Descargar comprobantes emitidos manualmente")
+            print("   y colocar el archivo en: facturas_xml/emitidas/")
+            return False
+        
+        # Guardar HTML para debug
+        from guardar_html import guardar_html
+        guardar_html(driver, "debug_despues_consultar_emitidos")
+        
+        # Después de filtrar, descargar el reporte (igual que en recibidos)
+        print("\n📥 Descargando reporte...")
+        descargar_reporte_txt(driver, directorio_descarga)
         
         return True
         
@@ -837,7 +911,7 @@ def filtrar_fechas_emitidos(driver, desde, hasta):
         return False
 
 
-def filtrar_fechas(driver, desde, hasta, ruc=None):
+def filtrar_fechas(driver, desde, hasta, ruc=None, directorio_descarga=None):
     """Filtra facturas por rango de fechas y descarga el reporte"""
     wait = WebDriverWait(driver, 20)
     
@@ -847,7 +921,7 @@ def filtrar_fechas(driver, desde, hasta, ruc=None):
     
     # Si es emitidos, usar función específica
     if tipo_pagina == 'emitidos':
-        return filtrar_fechas_emitidos(driver, desde, hasta)
+        return filtrar_fechas_emitidos(driver, desde, hasta, directorio_descarga)
     
     # Si es recibidos, continuar con el código existente
     try:

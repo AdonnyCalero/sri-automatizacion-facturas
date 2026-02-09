@@ -8,7 +8,8 @@ from config import (
     RECIBIDAS_PATH,
     EMITIDAS_PATH,
     FECHA_DESDE,
-    FECHA_HASTA
+    FECHA_HASTA,
+    RUC
 )
 from login_sri import login
 from descargar_facturas import (
@@ -18,6 +19,7 @@ from descargar_facturas import (
     filtrar_fechas,
     descargar_documentos
 )
+from emitidos_requests import consultar_emitidos_requests
 from generar_excel import generar_excel
 from guardar_html import guardar_html
 
@@ -86,7 +88,7 @@ try:
     time.sleep(5)
     guardar_html(driver, "02_recibidas_menu")
 
-    filtrar_fechas(driver, FECHA_DESDE, FECHA_HASTA)
+    filtrar_fechas(driver, FECHA_DESDE, FECHA_HASTA, directorio_descarga=RECIBIDAS_PATH)
     time.sleep(5)
     guardar_html(driver, "03_recibidas_filtradas")
 
@@ -100,35 +102,33 @@ try:
     # ========= FACTURAS EMITIDAS (OPCIONAL) =========
     try:
         print("\n" + "="*60)
-        print("PREPARANDO NAVEGACION A COMPROBANTES EMITIDOS")
+        print("DESCARGANDO COMPROBANTES EMITIDOS")
         print("="*60)
         
-        # Esperar un momento para asegurar que la página esté estable
-        print("Esperando 3 segundos para estabilizar la página...")
-        time.sleep(3)
+        # Para emitidos, usar requests directamente (más confiable)
+        print("\n📡 Usando método directo con requests...")
         
-        # Ejecutar diagnóstico del menú
-        diagnosticar_menu(driver)
+        # Crear sesión de requests con las cookies de Selenium
+        import requests
+        session = requests.Session()
         
-        driver.execute_cdp_cmd(
-            "Page.setDownloadBehavior",
-            {"behavior": "allow", "downloadPath": EMITIDAS_PATH}
+        # Transferir cookies del driver a requests
+        for cookie in driver.get_cookies():
+            session.cookies.set(cookie['name'], cookie['value'])
+        
+        # Consultar emitidos
+        exito_emitidos = consultar_emitidos_requests(
+            session, 
+            fecha_desde=FECHA_DESDE,
+            ruc=RUC,
+            directorio_descarga=EMITIDAS_PATH
         )
-
-        ir_a_emitidas_nuevo_menu(driver)
-        time.sleep(5)
-        guardar_html(driver, "04_emitidas_menu")
-
-        filtrar_fechas(driver, FECHA_DESDE, FECHA_HASTA)
-        time.sleep(5)
-        guardar_html(driver, "05_emitidas_filtradas")
-
-        print("Descargando documentos emitidos...")
-        resultado = descargar_documentos(driver, descargar_xml=True, descargar_pdf=True, directorio_descarga=EMITIDAS_PATH)
         
-        if resultado and (resultado.get('xml', 0) > 0 or resultado.get('pdf', 0) > 0):
+        if exito_emitidos:
             descarga_exitosa = True
-            print(f" Descarga de emitidas completada")
+            print("✅ Descarga de emitidas completada")
+        else:
+            print("⚠️ No se pudo descargar emitidos automáticamente")
             
     except Exception as e:
         print(f" No se pudieron descargar emitidas: {e}")
