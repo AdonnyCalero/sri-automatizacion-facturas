@@ -92,13 +92,14 @@ try:
     filtrar_fechas(driver, FECHA_DESDE, FECHA_HASTA, directorio_descarga=RECIBIDAS_PATH)
     time.sleep(5)
     guardar_html(driver, "03_recibidas_filtradas")
-
-    print("Descargando documentos recibidos...")
-    resultado = descargar_documentos(driver, descargar_xml=True, descargar_pdf=True, directorio_descarga=RECIBIDAS_PATH)
     
-    if resultado and (resultado.get('xml', 0) > 0 or resultado.get('pdf', 0) > 0):
+    # La descarga ya se hizo dentro de filtrar_fechas, solo verificamos resultado
+    print("Verificando descarga de recibidas...")
+    import os
+    archivos_recibidas = [f for f in os.listdir(RECIBIDAS_PATH) if f.endswith('.txt')]
+    if len(archivos_recibidas) > 0:
         descarga_exitosa = True
-        print(f" Descarga de recibidas completada")
+        print(f" [OK] Descarga de recibidas completada - {len(archivos_recibidas)} archivos")
 
     # ========= FACTURAS EMITIDAS (OPCIONAL) =========
     try:

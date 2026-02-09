@@ -90,6 +90,7 @@ def iniciar_proceso():
     fecha_desde = data.get('fecha_desde', '07/02/2026')
     fecha_hasta = data.get('fecha_hasta', '07/02/2026')
     ruc = data.get('ruc', '1713166765001')
+    clave = data.get('clave', '')
     
     agregar_log('Iniciando proceso de automatización...')
     agregar_log(f'Configuración: RUC={ruc}, Fecha={fecha_desde}')
@@ -97,7 +98,7 @@ def iniciar_proceso():
     # Iniciar proceso en un thread separado
     thread = threading.Thread(
         target=ejecutar_script,
-        args=(fecha_desde, fecha_hasta, ruc)
+        args=(fecha_desde, fecha_hasta, ruc, clave)
     )
     thread.daemon = True
     thread.start()
@@ -127,34 +128,54 @@ def detener_proceso():
 
 @app.route('/api/archivos', methods=['GET'])
 def listar_archivos():
-    """Lista los archivos descargados"""
+    """Lista los archivos descargados y cuenta facturas reales"""
     recibidas_path = 'facturas_xml/recibidas'
     emitidas_path = 'facturas_xml/emitidas'
     
     archivos_recibidos = []
     archivos_emitidos = []
+    total_facturas_recibidas = 0
+    total_facturas_emitidas = 0
+    
+    def contar_facturas_en_archivo(ruta_archivo):
+        """Cuenta cuántas facturas hay en un archivo TXT"""
+        try:
+            with open(ruta_archivo, 'r', encoding='latin-1') as f:
+                lineas = f.readlines()
+            # Restar 1 por el encabezado
+            return max(0, len(lineas) - 1)
+        except:
+            return 0
     
     if os.path.exists(recibidas_path):
         for f in os.listdir(recibidas_path):
-            if f.endswith('.txt') or f.endswith('.xlsx'):
+            if f.endswith('.txt'):
+                ruta = os.path.join(recibidas_path, f)
+                num_facturas = contar_facturas_en_archivo(ruta)
+                total_facturas_recibidas += num_facturas
                 archivos_recibidos.append({
                     'nombre': f,
                     'tipo': 'recibido',
-                    'tamaño': os.path.getsize(os.path.join(recibidas_path, f)),
+                    'tamaño': os.path.getsize(ruta),
+                    'facturas': num_facturas,
                     'fecha': datetime.fromtimestamp(
-                        os.path.getmtime(os.path.join(recibidas_path, f))
+                        os.path.getmtime(ruta)
                     ).isoformat()
                 })
     
     if os.path.exists(emitidas_path):
         for f in os.listdir(emitidas_path):
-            if f.endswith('.txt') or f.endswith('.xlsx'):
+            if f.endswith('.txt'):
+                ruta = os.path.join(emitidas_path, f)
+                num_facturas = contar_facturas_en_archivo(ruta)
+                total_facturas_emitidas += num_facturas
                 archivos_emitidos.append({
                     'nombre': f,
                     'tipo': 'emitido',
-                    'tamaño': os.path.getsize(os.path.join(emitidas_path, f)),
+                    'tamaño': os.path.getsize(ruta),
+                    'facturas': num_facturas,
                     'fecha': datetime.fromtimestamp(
-                        os.path.getmtime(os.path.join(emitidas_path, f))
+                        os.path.getmtime(ruta)
                     ).isoformat()
                 })
     
@@ -162,7 +183,9 @@ def listar_archivos():
         'recibidos': archivos_recibidos,
         'emitidos': archivos_emitidos,
         'total_recibidos': len(archivos_recibidos),
-        'total_emitidos': len(archivos_emitidos)
+        'total_emitidos': len(archivos_emitidos),
+        'total_facturas_recibidas': total_facturas_recibidas,
+        'total_facturas_emitidas': total_facturas_emitidas
     })
 
 @app.route('/api/descargar/<tipo>/<nombre>', methods=['GET'])
@@ -180,7 +203,7 @@ def descargar_archivo(tipo, nombre):
     
     return send_file(path, as_attachment=True)
 
-def ejecutar_script(fecha_desde, fecha_hasta, ruc):
+def ejecutar_script(fecha_desde, fecha_hasta, ruc, clave):
     """Ejecuta el script Python principal mostrando el navegador"""
     global proceso_estado
     
@@ -191,7 +214,7 @@ def ejecutar_script(fecha_desde, fecha_hasta, ruc):
         proceso_estado['progreso'] = 5
         
         # Actualizar config.py con los valores recibidos
-        actualizar_config(fecha_desde, fecha_hasta, ruc)
+        actualizar_config(fecha_desde, fecha_hasta, ruc, clave)
         
         agregar_log('Abriendo navegador Chrome...')
         proceso_estado['progreso'] = 10
@@ -286,7 +309,7 @@ def ejecutar_script(fecha_desde, fecha_hasta, ruc):
         proceso_estado['activo'] = False
         proceso_estado['fin'] = datetime.now().isoformat()
 
-def actualizar_config(fecha_desde, fecha_hasta, ruc):
+def actualizar_config(fecha_desde, fecha_hasta, ruc, clave):
     """Actualiza el archivo config.py con los nuevos valores"""
     try:
         config_path = os.path.join(os.path.dirname(__file__), 'config.py')
@@ -294,24 +317,21 @@ def actualizar_config(fecha_desde, fecha_hasta, ruc):
         with open(config_path, 'r', encoding='utf-8') as f:
             contenido = f.read()
         
-        # Actualizar valores
-        contenido = contenido.replace(
-            f'FECHA_DESDE = "', 
-            f'FECHA_DESDE = "{fecha_desde}"  # '
-        )
-        contenido = contenido.replace(
-            f'FECHA_HASTA = "',
-            f'FECHA_HASTA = "{fecha_hasta}"  # '
-        )
-        contenido = contenido.replace(
-            f'RUC = "',
-            f'RUC = "{ruc}"  # '
-        )
+        # Actualizar RUC
+        import re
+        contenido = re.sub(r'RUC = "[^"]*"', f'RUC = "{ruc}"', contenido)
+        
+        # Actualizar CLAVE
+        contenido = re.sub(r'CLAVE = "[^"]*"', f'CLAVE = "{clave}"', contenido)
+        
+        # Actualizar Fechas
+        contenido = re.sub(r'FECHA_DESDE = "[^"]*"', f'FECHA_DESDE = "{fecha_desde}"', contenido)
+        contenido = re.sub(r'FECHA_HASTA = "[^"]*"', f'FECHA_HASTA = "{fecha_hasta}"', contenido)
         
         with open(config_path, 'w', encoding='utf-8') as f:
             f.write(contenido)
         
-        agregar_log('Configuración actualizada')
+        agregar_log('Configuración actualizada (RUC, fechas)')
     except Exception as e:
         agregar_log(f'Error actualizando configuración: {e}')
 

@@ -381,6 +381,16 @@
                                 </div>
                             </div>
                             <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Contraseña SRI</label>
+                                        <input type="password" class="form-control" id="clave-config" 
+                                               placeholder="Ingrese contraseña del SRI">
+                                        <div class="form-text">Contraseña de acceso al portal SRI</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
                                 <div class="col-md-6">
                                     <div class="form-check form-switch mb-3">
                                         <input class="form-check-input" type="checkbox" id="descargar-recibidos" checked>
@@ -499,6 +509,14 @@
             const fechaDesde = document.getElementById('fecha-desde').value;
             const fechaHasta = document.getElementById('fecha-hasta').value;
             const ruc = document.getElementById('ruc-config').value;
+            const clave = document.getElementById('clave-config').value;
+            
+            // Validar campos
+            if (!ruc || !clave) {
+                alert('Por favor ingresa RUC y contraseña');
+                procesoActivo = false;
+                return;
+            }
             
             // Convertir fechas al formato dd/mm/aaaa
             const fechaDesdeFormatted = formatearFecha(fechaDesde);
@@ -517,7 +535,8 @@
                     body: JSON.stringify({
                         fecha_desde: fechaDesdeFormatted,
                         fecha_hasta: fechaHastaFormatted,
-                        ruc: ruc
+                        ruc: ruc,
+                        clave: clave
                     })
                 });
                 
@@ -577,9 +596,20 @@
                     document.getElementById('progress-bar').style.width = data.progreso + '%';
                     document.getElementById('progress-bar').textContent = data.progreso + '%';
                     
-                    // Actualizar contadores
-                    document.getElementById('count-recibidos').textContent = data.archivos_recibidos;
-                    document.getElementById('count-emitidos').textContent = data.archivos_emitidos;
+            // Actualizar contadores con número REAL de facturas
+            const facturasRecibidas = data.total_facturas_recibidas || data.archivos_recibidos || 0;
+            const facturasEmitidas = data.total_facturas_emitidas || data.archivos_emitidos || 0;
+            
+            document.getElementById('count-recibidos').textContent = facturasRecibidas;
+            document.getElementById('count-emitidos').textContent = facturasEmitidas;
+            
+            // Mostrar detalle en el log
+            if (facturasRecibidas > 0) {
+                agregarLog(`[INFO] Total facturas recibidas: ${facturasRecibidas}`);
+            }
+            if (facturasEmitidas > 0) {
+                agregarLog(`[INFO] Total facturas emitidas: ${facturasEmitidas}`);
+            }
                     
                     // Si el proceso terminó
                     if (!data.activo && procesoActivo) {
@@ -629,14 +659,16 @@
                 const container = document.getElementById('file-list');
                 container.innerHTML = '';
                 
-                // Agregar archivos recibidos
+                // Agregar archivos recibidos con conteo de facturas
                 data.recibidos.forEach(archivo => {
-                    agregarArchivo(archivo.nombre, formatearBytes(archivo.tamaño));
+                    const detalle = `${formatearBytes(archivo.tamaño)} (${archivo.facturas} facturas)`;
+                    agregarArchivo(archivo.nombre, detalle);
                 });
                 
-                // Agregar archivos emitidos
+                // Agregar archivos emitidos con conteo de facturas
                 data.emitidos.forEach(archivo => {
-                    agregarArchivo(archivo.nombre, formatearBytes(archivo.tamaño));
+                    const detalle = `${formatearBytes(archivo.tamaño)} (${archivo.facturas} facturas)`;
+                    agregarArchivo(archivo.nombre, detalle);
                 });
                 
             } catch (e) {
@@ -731,12 +763,13 @@
             const fechaDesde = document.getElementById('fecha-desde').value;
             const fechaHasta = document.getElementById('fecha-hasta').value;
             const ruc = document.getElementById('ruc-config').value;
+            const clave = document.getElementById('clave-config').value;
             
             agregarLog(`Configuración actualizada:`);
             agregarLog(`- RUC: ${ruc}`);
             agregarLog(`- Período: ${formatearFecha(fechaDesde)} al ${formatearFecha(fechaHasta)}`);
             
-            // Guardar en localStorage para persistencia
+            // Guardar en localStorage para persistencia (sin la clave por seguridad)
             localStorage.setItem('sri_config', JSON.stringify({
                 fechaDesde,
                 fechaHasta,
