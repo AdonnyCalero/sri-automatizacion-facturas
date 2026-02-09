@@ -39,23 +39,49 @@ FECHA_HASTA = "31/12/2024"
 
 ## Uso
 
-1. Ejecutar el script principal:
+### Forma 1: Ejecución Directa (Recomendada) ✅
+
+**Esta es la forma más confiable.** Simplemente haz doble clic en:
+```
+ejecutar.bat
+```
+
+O ejecuta en terminal:
 ```bash
 python main.py
 ```
 
-2. El script hará lo siguiente:
-   - Abrirá el navegador Chrome
-   - Iniciará sesión en el SRI (debes resolver el captcha manualmente)
-   - Navegará a comprobantes recibidos
-   - Filtrará por el rango de fechas configurado
-   - Descargará todos los XMLs
-   - Repetirá el proceso para comprobantes emitidos
-   - Generará el archivo `facturas_sri.xlsx` con todos los datos
+El script hará todo automáticamente:
+- Abrirá Chrome
+- Descargará facturas recibidas y emitidas
+- Generará los archivos Excel
 
-3. Los archivos XML se descargarán en:
-   - `facturas_xml/recibidas/` - Facturas recibidas
-   - `facturas_xml/emitidas/` - Facturas emitidas
+### Forma 2: Interfaz Web (Frontend + Backend)
+
+**Nota:** Esta opción es más visual pero el reCAPTCHA del SRI requiere que el script se ejecute directamente con el navegador visible.
+
+Para usar la interfaz web:
+```bash
+# Terminal 1 - Backend
+python api.py
+
+# Terminal 2 - Frontend
+npm run dev
+```
+
+Luego abre: http://localhost:3001
+
+**Recomendación:** Usa la Forma 1 para descargas reales.
+
+---
+
+## Resultado
+
+Los archivos se descargarán en:
+- `facturas_xml/recibidas/` - Facturas recibidas
+- `facturas_xml/emitidas/` - Facturas emitidas
+- `facturas_recibidas.xlsx` - Excel con recibidas
+- `facturas_emitidas.xlsx` - Excel con emitidas
 
 ## Estructura del Proyecto
 

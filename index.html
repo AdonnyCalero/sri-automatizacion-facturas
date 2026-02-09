@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SRI Automatización - Descarga de Facturas</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #0056b3;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --bg-color: #f8f9fa;
+        }
+        
+        body {
+            background-color: var(--bg-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.5rem;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+            border-bottom: 2px solid #e9ecef;
+            border-radius: 15px 15px 0 0 !important;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+            border: none;
+            padding: 12px 30px;
+            font-weight: 600;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,86,179,0.3);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #198754 0%, #146c43 100%);
+            border: none;
+            padding: 12px 30px;
+            font-weight: 600;
+            border-radius: 10px;
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-processing {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .status-completed {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .log-container {
+            background-color: #212529;
+            color: #fff;
+            border-radius: 10px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 5px 0;
+            border-bottom: 1px solid #343a40;
+        }
+        
+        .log-time {
+            color: #6c757d;
+            font-size: 0.8rem;
+        }
+        
+        .stats-card {
+            background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .icon-circle {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+        }
+        
+        .bg-primary-light {
+            background-color: rgba(0,86,179,0.1);
+            color: var(--primary-color);
+        }
+        
+        .bg-success-light {
+            background-color: rgba(25,135,84,0.1);
+            color: var(--success-color);
+        }
+        
+        .progress {
+            height: 30px;
+            border-radius: 15px;
+            background-color: #e9ecef;
+        }
+        
+        .progress-bar {
+            border-radius: 15px;
+            font-weight: 600;
+            line-height: 30px;
+        }
+        
+        .file-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        
+        .file-icon {
+            color: var(--primary-color);
+            margin-right: 10px;
+        }
+        
+        .hero-section {
+            background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+            color: white;
+            padding: 60px 0;
+            margin-bottom: 40px;
+        }
+        
+        .feature-icon {
+            font-size: 3rem;
+            color: var(--primary-color);
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-building me-2"></i>
+                SRI Automatización
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#"><i class="bi bi-house me-1"></i> Inicio</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#configuracion"><i class="bi bi-gear me-1"></i> Configuración</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#historial"><i class="bi bi-clock-history me-1"></i> Historial</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container text-center">
+            <h1 class="display-4 fw-bold mb-4">Automatización de Facturas SRI</h1>
+            <p class="lead mb-4">Descarga automática de comprobantes electrónicos recibidos y emitidos del SRI Ecuador</p>
+            <div class="d-flex justify-content-center gap-3">
+                <button class="btn btn-light btn-lg" onclick="iniciarProceso()">
+                    <i class="bi bi-play-circle me-2"></i>Iniciar Proceso
+                </button>
+                <button class="btn btn-outline-light btn-lg" onclick="verConfiguracion()">
+                    <i class="bi bi-gear me-2"></i>Configurar
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <div class="container">
+        <!-- Estado del Proceso -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-activity me-2"></i>Estado del Proceso</h5>
+                        <span id="status-badge" class="status-badge status-pending">
+                            <i class="bi bi-hourglass"></i>
+                            <span id="status-text">Esperando</span>
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress mb-3">
+                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%">0%</div>
+                        </div>
+                        <div class="row text-center">
+                            <div class="col-md-3">
+                                <div class="stats-card card h-100 p-3">
+                                    <div class="icon-circle bg-primary-light mx-auto">
+                                        <i class="bi bi-download"></i>
+                                    </div>
+                                    <h6 class="text-muted">Recibidos</h6>
+                                    <h3 id="count-recibidos" class="text-primary">0</h3>
+                                    <small class="text-muted">facturas</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stats-card card h-100 p-3">
+                                    <div class="icon-circle bg-success-light mx-auto">
+                                        <i class="bi bi-upload"></i>
+                                    </div>
+                                    <h6 class="text-muted">Emitidos</h6>
+                                    <h3 id="count-emitidos" class="text-success">0</h3>
+                                    <small class="text-muted">facturas</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stats-card card h-100 p-3">
+                                    <div class="icon-circle bg-primary-light mx-auto">
+                                        <i class="bi bi-file-earmark-excel"></i>
+                                    </div>
+                                    <h6 class="text-muted">Archivos Excel</h6>
+                                    <h3 id="count-excel" class="text-primary">0</h3>
+                                    <small class="text-muted">generados</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="stats-card card h-100 p-3">
+                                    <div class="icon-circle bg-success-light mx-auto">
+                                        <i class="bi bi-clock"></i>
+                                    </div>
+                                    <h6 class="text-muted">Tiempo</h6>
+                                    <h3 id="tiempo-total">00:00</h3>
+                                    <small class="text-muted">duración</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel de Control -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-terminal me-2"></i>Log de Ejecución</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="log-container" class="log-container">
+                            <div class="log-entry">
+                                <span class="log-time">[00:00:00]</span> Sistema listo. Esperando inicio...
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <button class="btn btn-secondary btn-sm" onclick="limpiarLog()">
+                            <i class="bi bi-trash me-1"></i>Limpiar Log
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm ms-2" onclick="exportarLog()">
+                            <i class="bi bi-download me-1"></i>Exportar Log
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-folder me-2"></i>Archivos Descargados</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="file-list" class="file-list">
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1"></i>
+                                <p class="mt-2">No hay archivos descargados</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <button class="btn btn-primary btn-sm w-100" onclick="abrirCarpeta()">
+                            <i class="bi bi-folder-open me-1"></i>Abrir Carpeta
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuración Rápida -->
+        <div id="configuracion" class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Configuración Rápida</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="config-form">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Fecha Desde</label>
+                                        <input type="date" class="form-control" id="fecha-desde" value="2026-02-07">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Fecha Hasta</label>
+                                        <input type="date" class="form-control" id="fecha-hasta" value="2026-02-07">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">RUC</label>
+                                        <input type="text" class="form-control" id="ruc-config" 
+                                               value="1713166765001" placeholder="Ingrese RUC">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="descargar-recibidos" checked>
+                                        <label class="form-check-label" for="descargar-recibidos">
+                                            Descargar comprobantes recibidos
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="descargar-emitidos" checked>
+                                        <label class="form-check-label" for="descargar-emitidos">
+                                            Descargar comprobantes emitidos
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-primary" onclick="guardarConfiguracion()">
+                                <i class="bi bi-save me-2"></i>Guardar Configuración
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Características -->
+        <div class="row mb-4">
+            <div class="col-12 text-center mb-4">
+                <h2>Características</h2>
+                <p class="text-muted">Todo lo que necesitas para automatizar tus facturas</p>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 text-center p-4">
+                    <div class="feature-icon">
+                        <i class="bi bi-robot"></i>
+                    </div>
+                    <h5>Automatización Total</h5>
+                    <p class="text-muted">Descarga automática de comprobantes sin intervención manual</p>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 text-center p-4">
+                    <div class="feature-icon">
+                        <i class="bi bi-file-earmark-excel"></i>
+                    </div>
+                    <h5>Exportación Excel</h5>
+                    <p class="text-muted">Genera archivos Excel organizados por tipo de comprobante</p>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 text-center p-4">
+                    <div class="feature-icon">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <h5>Seguro y Confiable</h5>
+                    <p class="text-muted">Usa tu sesión del SRI de forma segura</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>SRI Automatización v2</h5>
+                    <p class="mb-0 text-muted">Sistema de descarga automática de comprobantes electrónicos</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p class="mb-0 text-muted">
+                        <i class="bi bi-code-slash me-1"></i>Desarrollado con Python + Bootstrap
+                    </p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Vite Main JS -->
+    <script type="module" src="/src/main.js"></script>
+    
+    <script>
+        // Variables globales
+        let procesoActivo = false;
+        let tiempoInicio = null;
+        let intervaloTiempo = null;
+
+        // URL de la API
+        const API_URL = 'http://localhost:5000';
+        let intervaloLogs = null;
+        let intervaloEstado = null;
+
+        // Funciones de control
+        async function iniciarProceso() {
+            if (procesoActivo) {
+                alert('Ya hay un proceso en ejecución');
+                return;
+            }
+            
+            procesoActivo = true;
+            tiempoInicio = Date.now();
+            
+            // Actualizar UI
+            actualizarEstado('processing', 'Procesando...');
+            document.getElementById('progress-bar').style.width = '5%';
+            document.getElementById('progress-bar').textContent = '5%';
+            
+            // Iniciar contador de tiempo
+            intervaloTiempo = setInterval(actualizarTiempo, 1000);
+            
+            // Obtener configuración
+            const fechaDesde = document.getElementById('fecha-desde').value;
+            const fechaHasta = document.getElementById('fecha-hasta').value;
+            const ruc = document.getElementById('ruc-config').value;
+            
+            // Convertir fechas al formato dd/mm/aaaa
+            const fechaDesdeFormatted = formatearFecha(fechaDesde);
+            const fechaHastaFormatted = formatearFecha(fechaHasta);
+            
+            agregarLog('Iniciando proceso de descarga...');
+            agregarLog('Conectando al backend...');
+            
+            try {
+                // Llamar a la API para iniciar el proceso
+                const response = await fetch(`${API_URL}/api/iniciar`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        fecha_desde: fechaDesdeFormatted,
+                        fecha_hasta: fechaHastaFormatted,
+                        ruc: ruc
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    agregarLog('Proceso iniciado en el servidor');
+                    agregarLog('Conectando al SRI...');
+                    
+                    // Iniciar polling de logs y estado
+                    iniciarPolling();
+                } else {
+                    agregarLog('Error: ' + data.message);
+                    procesoActivo = false;
+                    actualizarEstado('error', 'Error');
+                }
+            } catch (error) {
+                agregarLog('Error al conectar con el backend: ' + error.message);
+                procesoActivo = false;
+                actualizarEstado('error', 'Error');
+            }
+        }
+
+        function formatearFecha(fechaISO) {
+            // Convierte de YYYY-MM-DD a DD/MM/YYYY
+            const [anio, mes, dia] = fechaISO.split('-');
+            return `${dia}/${mes}/${anio}`;
+        }
+
+        function iniciarPolling() {
+            let ultimoLog = 0;
+            
+            // Polling de logs cada 2 segundos
+            intervaloLogs = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_URL}/api/logs?desde=${ultimoLog}`);
+                    const data = await response.json();
+                    
+                    if (data.logs && data.logs.length > 0) {
+                        data.logs.forEach(log => {
+                            agregarLog(log.mensaje);
+                        });
+                        ultimoLog = data.total;
+                    }
+                } catch (e) {
+                    console.error('Error obteniendo logs:', e);
+                }
+            }, 2000);
+            
+            // Polling de estado cada 3 segundos
+            intervaloEstado = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_URL}/api/estado`);
+                    const data = await response.json();
+                    
+                    // Actualizar progreso
+                    document.getElementById('progress-bar').style.width = data.progreso + '%';
+                    document.getElementById('progress-bar').textContent = data.progreso + '%';
+                    
+                    // Actualizar contadores
+                    document.getElementById('count-recibidos').textContent = data.archivos_recibidos;
+                    document.getElementById('count-emitidos').textContent = data.archivos_emitidos;
+                    
+                    // Si el proceso terminó
+                    if (!data.activo && procesoActivo) {
+                        finalizarProceso(data);
+                    }
+                    
+                    if (data.error) {
+                        agregarLog('Error: ' + data.error);
+                        actualizarEstado('error', 'Error');
+                    }
+                } catch (e) {
+                    console.error('Error obteniendo estado:', e);
+                }
+            }, 3000);
+        }
+
+        function finalizarProceso(data) {
+            procesoActivo = false;
+            clearInterval(intervaloTiempo);
+            clearInterval(intervaloLogs);
+            clearInterval(intervaloEstado);
+            
+            document.getElementById('progress-bar').style.width = '100%';
+            document.getElementById('progress-bar').textContent = '100%';
+            
+            if (data.error) {
+                actualizarEstado('error', 'Error');
+                agregarLog('Proceso finalizado con errores');
+            } else {
+                actualizarEstado('completed', 'Completado');
+                agregarLog('Proceso completado exitosamente');
+                agregarLog('Archivos Excel generados');
+                
+                // Actualizar contadores
+                document.getElementById('count-excel').textContent = '2';
+                
+                // Actualizar lista de archivos
+                actualizarListaArchivos();
+            }
+        }
+
+        async function actualizarListaArchivos() {
+            try {
+                const response = await fetch(`${API_URL}/api/archivos`);
+                const data = await response.json();
+                
+                const container = document.getElementById('file-list');
+                container.innerHTML = '';
+                
+                // Agregar archivos recibidos
+                data.recibidos.forEach(archivo => {
+                    agregarArchivo(archivo.nombre, formatearBytes(archivo.tamaño));
+                });
+                
+                // Agregar archivos emitidos
+                data.emitidos.forEach(archivo => {
+                    agregarArchivo(archivo.nombre, formatearBytes(archivo.tamaño));
+                });
+                
+            } catch (e) {
+                console.error('Error obteniendo archivos:', e);
+            }
+        }
+
+        function formatearBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function actualizarEstado(tipo, texto) {
+            const badge = document.getElementById('status-badge');
+            const statusText = document.getElementById('status-text');
+            
+            badge.className = `status-badge status-${tipo}`;
+            statusText.textContent = texto;
+        }
+
+        function actualizarTiempo() {
+            const ahora = Date.now();
+            const diferencia = ahora - tiempoInicio;
+            const minutos = Math.floor(diferencia / 60000);
+            const segundos = Math.floor((diferencia % 60000) / 1000);
+            document.getElementById('tiempo-total').textContent = 
+                `${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+        }
+
+        function agregarLog(mensaje) {
+            const container = document.getElementById('log-container');
+            const ahora = new Date();
+            const hora = ahora.toTimeString().split(' ')[0];
+            
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">[${hora}]</span> ${mensaje}`;
+            
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function limpiarLog() {
+            document.getElementById('log-container').innerHTML = '';
+            agregarLog('Log limpiado');
+        }
+
+        function exportarLog() {
+            const log = document.getElementById('log-container').innerText;
+            const blob = new Blob([log], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `log_${new Date().toISOString().split('T')[0]}.txt`;
+            a.click();
+        }
+
+        function agregarArchivo(nombre, tamaño) {
+            const container = document.getElementById('file-list');
+            
+            // Limpiar mensaje inicial si existe
+            if (container.querySelector('.text-center')) {
+                container.innerHTML = '';
+            }
+            
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `
+                <div>
+                    <i class="bi bi-file-earmark-excel file-icon"></i>
+                    <span>${nombre}</span>
+                </div>
+                <span class="text-muted">${tamaño}</span>
+            `;
+            
+            container.appendChild(item);
+        }
+
+        async function abrirCarpeta() {
+            agregarLog('Actualizando lista de archivos...');
+            await actualizarListaArchivos();
+        }
+
+        function verConfiguracion() {
+            document.getElementById('configuracion').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function guardarConfiguracion() {
+            const fechaDesde = document.getElementById('fecha-desde').value;
+            const fechaHasta = document.getElementById('fecha-hasta').value;
+            const ruc = document.getElementById('ruc-config').value;
+            
+            agregarLog(`Configuración actualizada:`);
+            agregarLog(`- RUC: ${ruc}`);
+            agregarLog(`- Período: ${formatearFecha(fechaDesde)} al ${formatearFecha(fechaHasta)}`);
+            
+            // Guardar en localStorage para persistencia
+            localStorage.setItem('sri_config', JSON.stringify({
+                fechaDesde,
+                fechaHasta,
+                ruc
+            }));
+            
+            alert('Configuración guardada exitosamente');
+        }
+
+        function cargarConfiguracion() {
+            const config = localStorage.getItem('sri_config');
+            if (config) {
+                const data = JSON.parse(config);
+                document.getElementById('fecha-desde').value = data.fechaDesde || '2026-02-07';
+                document.getElementById('fecha-hasta').value = data.fechaHasta || '2026-02-07';
+                document.getElementById('ruc-config').value = data.ruc || '1713166765001';
+            }
+        }
+
+        async function verificarBackend() {
+            try {
+                const response = await fetch(`${API_URL}/`);
+                const data = await response.json();
+                agregarLog('Backend conectado: ' + data.message);
+                agregarLog('Versión: ' + data.version);
+                return true;
+            } catch (e) {
+                agregarLog('⚠️ No se pudo conectar con el backend');
+                agregarLog('Asegúrate de ejecutar: python api.py');
+                return false;
+            }
+        }
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', async function() {
+            cargarConfiguracion();
+            agregarLog('Frontend iniciado correctamente');
+            agregarLog('Verificando conexión con backend...');
+            
+            const conectado = await verificarBackend();
+            if (conectado) {
+                agregarLog('✓ Sistema listo para procesar');
+                // Cargar archivos existentes
+                await actualizarListaArchivos();
+            } else {
+                agregarLog('✗ Inicia el backend primero: python api.py');
+            }
+        });
+    </script>
+</body>
+</html>

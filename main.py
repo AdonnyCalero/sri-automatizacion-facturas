@@ -49,6 +49,7 @@ options.add_argument("--disable-features=DownloadBubble,DownloadBubbleV2")
 options.add_argument("--disable-web-security")
 options.add_argument("--allow-running-insecure-content")
 options.add_argument("--disable-extensions")
+options.add_argument("--start-maximized")  # INICIAR EN PANTALLA COMPLETA
 
 driver = webdriver.Chrome(options=options)
 
