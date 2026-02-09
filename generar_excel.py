@@ -152,62 +152,125 @@ def generar_excel_desde_txt(ruta_txt=None, nombre_salida="facturas_sri.xlsx"):
         print(" No se pudieron procesar los datos")
         return False
 
+def generar_excel_por_tipo(ruta_carpeta, nombre_salida, tipo_nombre):
+    """
+    Genera un archivo Excel para un tipo especfico (recibidos o emitidos)
+    """
+    print(f"\n{'='*60}")
+    print(f"GENERANDO EXCEL - {tipo_nombre.upper()}")
+    print(f"{'='*60}")
+    
+    print(f"\n Buscando archivos en: {ruta_carpeta}")
+    
+    if not os.path.exists(ruta_carpeta):
+        print(f"   La carpeta no existe")
+        return False
+    
+    archivos = os.listdir(ruta_carpeta)
+    archivos_txt = [f for f in archivos if f.endswith('.txt')]
+    
+    print(f"   Archivos encontrados: {len(archivos)}")
+    print(f"   Archivos TXT: {len(archivos_txt)}")
+    
+    if not archivos_txt:
+        print(f"   No se encontraron archivos TXT")
+        return False
+    
+    # Procesar todos los archivos TXT y combinarlos
+    print(f"\n Procesando {len(archivos_txt)} archivos...")
+    dataframes = []
+    
+    for archivo in archivos_txt:
+        ruta_completa = os.path.join(ruta_carpeta, archivo)
+        print(f"\n   Procesando: {archivo}")
+        df = leer_reporte_txt(ruta_completa)
+        if df is not None and not df.empty:
+            dataframes.append(df)
+    
+    if not dataframes:
+        print(f"   No se pudieron procesar los datos")
+        return False
+    
+    # Combinar todos los DataFrames
+    print(f"\n Combinando {len(dataframes)} archivos...")
+    df_combinado = pd.concat(dataframes, ignore_index=True)
+    
+    # Eliminar duplicados si los hay
+    df_combinado = df_combinado.drop_duplicates()
+    
+    # Limpiar y formatear datos
+    print("   Formateando datos...")
+    
+    # Convertir columnas numricas
+    columnas_numericas = ['Valor sin impuestos', 'IVA', 'Importe Total', 
+                         'valor_sin_impuestos', 'iva', 'importe_total',
+                         'VALOR_SIN_IMPUESTOS', 'IVA', 'IMPORTE_TOTAL']
+    
+    for col in df_combinado.columns:
+        if any(num_col.lower() in col.lower() for num_col in columnas_numericas):
+            try:
+                df_combinado[col] = pd.to_numeric(df_combinado[col].astype(str).str.replace(',', '.'), errors='coerce')
+            except:
+                pass
+    
+    # Guardar en Excel
+    df_combinado.to_excel(nombre_salida, index=False, engine='openpyxl')
+    
+    print(f"\n[OK] Excel generado exitosamente:")
+    print(f"   Archivo: {nombre_salida}")
+    print(f"   Total de facturas: {len(df_combinado)}")
+    print(f"   Columnas: {len(df_combinado.columns)}")
+    
+    # Mostrar primeras filas
+    print(f"\n Vista previa (primeras 5 filas):")
+    print(df_combinado.head().to_string())
+    
+    return True
+
+
 def generar_excel():
     """
-    Funcin principal: intenta generar Excel desde TXT primero, 
-    si no hay TXT, procesa los XML individuales
+    Funcin principal: Genera dos archivos Excel separados
+    - facturas_recibidas.xlsx
+    - facturas_emitidas.xlsx
     """
     print("\n" + "="*60)
-    print("GENERANDO EXCEL")
+    print("GENERANDO ARCHIVOS EXCEL")
     print("="*60)
     
-    # Debug: mostrar informacin de bsqueda
-    print(f"\n Buscando archivos...")
-    print(f"   Carpeta recibidas: {RECIBIDAS_PATH}")
-    print(f"   Existe: {os.path.exists(RECIBIDAS_PATH)}")
-    print(f"   Carpeta emitidas: {EMITIDAS_PATH}")
-    print(f"   Existe: {os.path.exists(EMITIDAS_PATH)}")
+    exitos = []
     
-    # Buscar en ambas carpetas
-    archivos_txt_total = []
+    # Generar Excel para RECIBIDOS
+    print("\n[ENTRADA] Procesando comprobantes RECIBIDOS...")
+    exito_rec = generar_excel_por_tipo(
+        RECIBIDAS_PATH, 
+        "facturas_recibidas.xlsx", 
+        "Comprobantes Recibidos"
+    )
+    exitos.append(exito_rec)
     
-    if os.path.exists(RECIBIDAS_PATH):
-        archivos = os.listdir(RECIBIDAS_PATH)
-        archivos_txt_rec = [f for f in archivos if f.endswith('.txt')]
-        print(f"\n   RECIBIDAS:")
-        print(f"   - Archivos: {len(archivos)}")
-        print(f"   - TXT: {len(archivos_txt_rec)}")
-        if archivos_txt_rec:
-            print(f"   - Lista: {archivos_txt_rec}")
-        archivos_txt_total.extend([os.path.join(RECIBIDAS_PATH, f) for f in archivos_txt_rec])
+    # Generar Excel para EMITIDOS
+    print("\n[SALIDA] Procesando comprobantes EMITIDOS...")
+    exito_emi = generar_excel_por_tipo(
+        EMITIDAS_PATH, 
+        "facturas_emitidas.xlsx", 
+        "Comprobantes Emitidos"
+    )
+    exitos.append(exito_emi)
     
-    if os.path.exists(EMITIDAS_PATH):
-        archivos = os.listdir(EMITIDAS_PATH)
-        archivos_txt_emi = [f for f in archivos if f.endswith('.txt')]
-        print(f"\n   EMITIDAS:")
-        print(f"   - Archivos: {len(archivos)}")
-        print(f"   - TXT: {len(archivos_txt_emi)}")
-        if archivos_txt_emi:
-            print(f"   - Lista: {archivos_txt_emi}")
-        archivos_txt_total.extend([os.path.join(EMITIDAS_PATH, f) for f in archivos_txt_emi])
+    # Resumen final
+    print("\n" + "="*60)
+    print("RESUMEN DE GENERACIN")
+    print("="*60)
     
-    print(f"\n   Total TXT encontrados: {len(archivos_txt_total)}")
-    
-    # Intentar primero con el reporte TXT
-    print("\n Intentando generar desde TXT...")
-    if generar_excel_desde_txt():
-        return
-    
-    # Si no hay TXT, procesar XMLs individuales (mtodo anterior)
-    print("\n No se encontr reporte TXT, procesando archivos XML individuales...")
-    
-    data = []
-    data += cargar_xmls(RECIBIDAS_PATH, "RECIBIDA")
-    data += cargar_xmls(EMITIDAS_PATH, "EMITIDA")
-
-    if data:
-        df = pd.DataFrame(data)
-        df.to_excel("facturas_sri.xlsx", index=False)
-        print(f" Archivo facturas_sri.xlsx generado ({len(df)} facturas)")
+    if exito_rec:
+        print("[OK] facturas_recibidas.xlsx - Generado correctamente")
     else:
-        print(" No se encontraron datos para generar el Excel")
+        print("[ERROR] facturas_recibidas.xlsx - No se pudo generar")
+    
+    if exito_emi:
+        print("[OK] facturas_emitidas.xlsx - Generado correctamente")
+    else:
+        print("[ERROR] facturas_emitidas.xlsx - No se pudo generar")
+    
+    print("="*60)
