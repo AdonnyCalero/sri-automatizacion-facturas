@@ -38,9 +38,52 @@ def agregar_log(mensaje):
     })
     print(f"[{timestamp}] {mensaje}")
 
+def contar_facturas_existentes():
+    """Cuenta las facturas en archivos existentes"""
+    def contar_en_archivo(ruta):
+        try:
+            with open(ruta, 'r', encoding='latin-1') as f:
+                lineas = f.readlines()
+            return max(0, len(lineas) - 1)
+        except:
+            return 0
+    
+    total_rec = 0
+    total_emi = 0
+    
+    if os.path.exists('facturas_xml/recibidas'):
+        for archivo in os.listdir('facturas_xml/recibidas'):
+            if archivo.endswith('.txt'):
+                ruta = os.path.join('facturas_xml/recibidas', archivo)
+                total_rec += contar_en_archivo(ruta)
+    
+    if os.path.exists('facturas_xml/emitidas'):
+        for archivo in os.listdir('facturas_xml/emitidas'):
+            if archivo.endswith('.txt'):
+                ruta = os.path.join('facturas_xml/emitidas', archivo)
+                total_emi += contar_en_archivo(ruta)
+    
+    return total_rec, total_emi
+
 @app.route('/api/estado', methods=['GET'])
 def obtener_estado():
     """Retorna el estado actual del proceso"""
+    # Si no hay proceso activo pero hay archivos existentes, mostrar esos conteos
+    if not proceso_estado['activo'] and proceso_estado['archivos_recibidos'] == 0 and proceso_estado['archivos_emitidos'] == 0:
+        rec, emi = contar_facturas_existentes()
+        if rec > 0 or emi > 0:
+            return jsonify({
+                'activo': False,
+                'inicio': proceso_estado['inicio'],
+                'fin': proceso_estado['fin'],
+                'progreso': 0,
+                'archivos_recibidos': rec,
+                'archivos_emitidos': emi,
+                'error': proceso_estado['error'],
+                'logs_count': len(proceso_estado['logs']),
+                'historico': True
+            })
+    
     return jsonify({
         'activo': proceso_estado['activo'],
         'inicio': proceso_estado['inicio'],
@@ -91,6 +134,10 @@ def iniciar_proceso():
     fecha_hasta = data.get('fecha_hasta', '07/02/2026')
     ruc = data.get('ruc', '1713166765001')
     clave = data.get('clave', '')
+    
+    agregar_log('=== NUEVO PROCESO INICIADO ===')
+    agregar_log(f'RUC: {ruc}')
+    agregar_log(f'Fechas: {fecha_desde} - {fecha_hasta}')
     
     agregar_log('Iniciando proceso de automatización...')
     agregar_log(f'Configuración: RUC={ruc}, Fecha={fecha_desde}')
@@ -246,7 +293,7 @@ def ejecutar_script(fecha_desde, fecha_hasta, ruc, clave):
         import time
         time.sleep(10)  # Esperar 10 segundos inicial
         
-        # Monitorear la creación de archivos
+        # Monitorear la creación de archivos y contar facturas
         archivos_iniciales_rec = set()
         archivos_iniciales_emi = set()
         
@@ -255,47 +302,107 @@ def ejecutar_script(fecha_desde, fecha_hasta, ruc, clave):
         if os.path.exists('facturas_xml/emitidas'):
             archivos_iniciales_emi = set(os.listdir('facturas_xml/emitidas'))
         
+        def contar_facturas_en_archivo(ruta_archivo):
+            """Cuenta cuántas facturas hay en un archivo TXT"""
+            try:
+                with open(ruta_archivo, 'r', encoding='latin-1') as f:
+                    lineas = f.readlines()
+                # Restar 1 por el encabezado
+                return max(0, len(lineas) - 1)
+            except:
+                return 0
+        
         # Esperar hasta 5 minutos revisando cada 5 segundos
         tiempo_maximo = 300  # 5 minutos
         tiempo_transcurrido = 10
+        total_facturas_rec = 0
+        total_facturas_emi = 0
         
         while tiempo_transcurrido < tiempo_maximo and proceso_estado['activo']:
             time.sleep(5)
             tiempo_transcurrido += 5
             
-            # Verificar si hay archivos nuevos
-            archivos_actuales_rec = set()
-            archivos_actuales_emi = set()
+            # Verificar archivos actuales
+            archivos_actuales_rec = []
+            archivos_actuales_emi = []
             
             if os.path.exists('facturas_xml/recibidas'):
-                archivos_actuales_rec = set(os.listdir('facturas_xml/recibidas'))
+                archivos_actuales_rec = [f for f in os.listdir('facturas_xml/recibidas') if f.endswith('.txt')]
             if os.path.exists('facturas_xml/emitidas'):
-                archivos_actuales_emi = set(os.listdir('facturas_xml/emitidas'))
+                archivos_actuales_emi = [f for f in os.listdir('facturas_xml/emitidas') if f.endswith('.txt')]
             
-            nuevos_rec = len(archivos_actuales_rec - archivos_iniciales_rec)
-            nuevos_emi = len(archivos_actuales_emi - archivos_iniciales_emi)
+            # Contar facturas en archivos nuevos
+            nuevos_rec = [f for f in archivos_actuales_rec if f not in archivos_iniciales_rec]
+            nuevos_emi = [f for f in archivos_actuales_emi if f not in archivos_iniciales_emi]
             
-            if nuevos_rec > 0:
-                proceso_estado['archivos_recibidos'] = nuevos_rec
-                agregar_log(f'Descargadas {nuevos_rec} facturas recibidas')
-                proceso_estado['progreso'] = min(50, 20 + (nuevos_rec * 5))
+            # Contar facturas reales
+            for archivo in nuevos_rec:
+                ruta = os.path.join('facturas_xml/recibidas', archivo)
+                num_facturas = contar_facturas_en_archivo(ruta)
+                total_facturas_rec += num_facturas
+                agregar_log(f'[RECIBIDAS] Archivo {archivo}: {num_facturas} facturas')
             
-            if nuevos_emi > 0:
-                proceso_estado['archivos_emitidos'] = nuevos_emi
-                agregar_log(f'Descargadas {nuevos_emi} facturas emitidas')
-                proceso_estado['progreso'] = min(90, 50 + (nuevos_emi * 10))
+            for archivo in nuevos_emi:
+                ruta = os.path.join('facturas_xml/emitidas', archivo)
+                num_facturas = contar_facturas_en_archivo(ruta)
+                total_facturas_emi += num_facturas
+                agregar_log(f'[EMITIDAS] Archivo {archivo}: {num_facturas} facturas')
+            
+            # Actualizar contadores
+            if total_facturas_rec > 0:
+                proceso_estado['archivos_recibidos'] = total_facturas_rec
+                agregar_log(f'Total facturas recibidas: {total_facturas_rec}')
+                proceso_estado['progreso'] = min(50, 20 + (total_facturas_rec * 2))
+            
+            if total_facturas_emi > 0:
+                proceso_estado['archivos_emitidos'] = total_facturas_emi
+                agregar_log(f'Total facturas emitidas: {total_facturas_emi}')
+                proceso_estado['progreso'] = min(90, 50 + (total_facturas_emi * 5))
             
             # Verificar si se generaron Excel
             if os.path.exists('facturas_recibidas.xlsx') or os.path.exists('facturas_emitidas.xlsx'):
+                agregar_log('Archivos Excel detectados')
+                # Esperar un poco más para asegurar que todos los archivos se procesaron
+                time.sleep(3)
+                # Contar una última vez
+                if os.path.exists('facturas_xml/recibidas'):
+                    for archivo in os.listdir('facturas_xml/recibidas'):
+                        if archivo.endswith('.txt') and archivo not in archivos_iniciales_rec:
+                            ruta = os.path.join('facturas_xml/recibidas', archivo)
+                            num = contar_facturas_en_archivo(ruta)
+                            if num > 0 and archivo not in [f for f in nuevos_rec]:
+                                total_facturas_rec += num
+                                agregar_log(f'[RECIBIDAS FINAL] {archivo}: {num} facturas')
+                
+                if os.path.exists('facturas_xml/emitidas'):
+                    for archivo in os.listdir('facturas_xml/emitidas'):
+                        if archivo.endswith('.txt') and archivo not in archivos_iniciales_emi:
+                            ruta = os.path.join('facturas_xml/emitidas', archivo)
+                            num = contar_facturas_en_archivo(ruta)
+                            if num > 0 and archivo not in [f for f in nuevos_emi]:
+                                total_facturas_emi += num
+                                agregar_log(f'[EMITIDAS FINAL] {archivo}: {num} facturas')
+                
+                # Actualizar contadores finales
+                proceso_estado['archivos_recibidos'] = total_facturas_rec
+                proceso_estado['archivos_emitidos'] = total_facturas_emi
                 proceso_estado['progreso'] = 100
-                agregar_log('Archivos Excel generados')
+                agregar_log(f'CONTADOR FINAL - Recibidas: {total_facturas_rec}, Emitidas: {total_facturas_emi}')
                 break
         
         agregar_log('Proceso finalizado')
         proceso_estado['progreso'] = 100
         
+        # Contar totales finales
+        total_final_rec = proceso_estado['archivos_recibidos']
+        total_final_emi = proceso_estado['archivos_emitidos']
+        
+        agregar_log(f'RESUMEN FINAL:')
+        agregar_log(f'  - Facturas recibidas: {total_final_rec}')
+        agregar_log(f'  - Facturas emitidas: {total_final_emi}')
+        
         # Verificar resultado final
-        if proceso_estado['archivos_recibidos'] > 0 or proceso_estado['archivos_emitidos'] > 0:
+        if total_final_rec > 0 or total_final_emi > 0:
             agregar_log('Descarga completada exitosamente')
         else:
             agregar_log('No se detectaron nuevas descargas')

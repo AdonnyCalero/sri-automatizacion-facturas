@@ -597,18 +597,23 @@
                     document.getElementById('progress-bar').textContent = data.progreso + '%';
                     
             // Actualizar contadores con número REAL de facturas
-            const facturasRecibidas = data.total_facturas_recibidas || data.archivos_recibidos || 0;
-            const facturasEmitidas = data.total_facturas_emitidas || data.archivos_emitidos || 0;
+            // El backend guarda el conteo en 'archivos_recibidos' y 'archivos_emitidos'
+            const facturasRecibidas = data.archivos_recibidos || 0;
+            const facturasEmitidas = data.archivos_emitidos || 0;
+            
+            console.log('Estado recibido:', data);
+            console.log('Facturas recibidas:', facturasRecibidas);
+            console.log('Facturas emitidas:', facturasEmitidas);
             
             document.getElementById('count-recibidos').textContent = facturasRecibidas;
             document.getElementById('count-emitidos').textContent = facturasEmitidas;
             
-            // Mostrar detalle en el log
+            // Mostrar detalle en el log solo si cambió el valor
             if (facturasRecibidas > 0) {
-                agregarLog(`[INFO] Total facturas recibidas: ${facturasRecibidas}`);
+                agregarLog(`Total recibidas: ${facturasRecibidas} facturas`);
             }
             if (facturasEmitidas > 0) {
-                agregarLog(`[INFO] Total facturas emitidas: ${facturasEmitidas}`);
+                agregarLog(`Total emitidas: ${facturasEmitidas} facturas`);
             }
                     
                     // Si el proceso terminó
@@ -811,13 +816,38 @@
             
             const conectado = await verificarBackend();
             if (conectado) {
-                agregarLog('✓ Sistema listo para procesar');
-                // Cargar archivos existentes
+                agregarLog('[OK] Sistema listo para procesar');
+                // Cargar estado actual y archivos existentes
+                await cargarEstadoInicial();
                 await actualizarListaArchivos();
             } else {
-                agregarLog('✗ Inicia el backend primero: python api.py');
+                agregarLog('[X] Inicia el backend primero: python api.py');
             }
         });
+
+        async function cargarEstadoInicial() {
+            try {
+                const response = await fetch(`${API_URL}/api/estado`);
+                const data = await response.json();
+                
+                console.log('Estado inicial:', data);
+                
+                // Si hay datos históricos, mostrarlos
+                if (data.historico || data.archivos_recibidos > 0 || data.archivos_emitidos > 0) {
+                    document.getElementById('count-recibidos').textContent = data.archivos_recibidos;
+                    document.getElementById('count-emitidos').textContent = data.archivos_emitidos;
+                    
+                    if (data.historico) {
+                        agregarLog(`[INFO] Archivos existentes encontrados:`);
+                        agregarLog(`  - Recibidas: ${data.archivos_recibidos} facturas`);
+                        agregarLog(`  - Emitidas: ${data.archivos_emitidos} facturas`);
+                        actualizarEstado('completed', 'Datos disponibles');
+                    }
+                }
+            } catch (e) {
+                console.error('Error cargando estado inicial:', e);
+            }
+        }
     </script>
 </body>
 </html>
